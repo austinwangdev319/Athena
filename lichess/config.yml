@@ -28,8 +28,8 @@ engine:
     Hash: 256
     OwnBook: true
     TimeUse: 100
-    GambitRisk: 100
-    Aggression: 110
+    GambitRisk: 30
+    Aggression: 80
     Contempt: 25
 
 abort_time: 30
@@ -64,8 +64,7 @@ challenge:
     - bullet
   modes:
     - rated
-  # Incoming challenges must be rated and within +/-150 rating points.
-  # Outgoing challenges are also rated-only and restricted by tools/matchmaking.py.
+  # Incoming and outgoing challenges are rated-only; the matcher filters outgoing opponents by rating.
   rating_difference: 150
   max_simultaneous_games_per_user: 2
 
