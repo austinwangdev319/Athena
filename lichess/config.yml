@@ -1,19 +1,20 @@
-# lichess-bot configuration for Athena, tuned for 3+2 blitz.
-# The token is read from the LICHESS_BOT_TOKEN environment variable. Never put a real token in this file.
-token: "set-via-LICHESS_BOT_TOKEN-env-var"   # overridden by the LICHESS_BOT_TOKEN environment variable
+# Athena Lichess-bot configuration template.
+# The official lichess-bot runner replaces this token from the
+# LICHESS_BOT_TOKEN environment variable at startup. Never commit a real token.
+token: "set-via-LICHESS_BOT_TOKEN-env-var"
 url: "https://lichess.org/"
 
 engine:
-  dir: "./engines/"            # put the athena binary here (athena or athena.exe)
-  name: "athena"               # on Windows use "athena.exe"
-  working_dir: "./engines/"    # relative to the lichess-bot folder
+  dir: "./engines/"
+  name: "athena"
+  working_dir: "./engines/"
   protocol: "uci"
-  ponder: false                # set true if the machine has 4+ cores to spare
+  ponder: false
   polyglot:
-    enabled: false             # Athena uses its own built-in gambit book
+    enabled: false
   draw_or_resign:
     resign_enabled: false
-    offer_draw_enabled: false  # Athena plays on; it is built to avoid early draws
+    offer_draw_enabled: false
   online_moves:
     lichess_opening_explorer:
       enabled: false
@@ -22,11 +23,11 @@ engine:
     online_egtb:
       enabled: false
   uci_options:
-    Move Overhead: 150         # network lag margin for lichess; raise to 250 if you flag
-    Threads: 1                  # raise to your core count minus one
+    Move Overhead: 150
+    Threads: 1
     Hash: 256
     OwnBook: true
-    GambitRisk: 60             # 0 = sound lines only, 110 = Blackmar-Diemer / King's Gambit / Dragon become available
+    GambitRisk: 60
     Aggression: 80
     Contempt: 25
 
@@ -47,7 +48,7 @@ challenge:
   concurrency: 1
   games_reserved_for_humans: 0
   sort_by: "best"
-  preference: "human"          # take human challenges before bot challenges
+  preference: "bot"
   accept_bot: true
   only_bot: false
   max_increment: 20
@@ -60,9 +61,9 @@ challenge:
     - blitz
     - rapid
     - bullet
+  # Keep games casual by default while testing the bot integration.
   modes:
     - casual
-    - rated
   max_simultaneous_games_per_user: 2
 
 greeting:
@@ -72,15 +73,17 @@ greeting:
   goodbye_spectators: "Thanks for watching."
 
 matchmaking:
-  allow_matchmaking: false     # set true to have Athena challenge other bots at 3+2 when idle
+  # Automatically challenge other Lichess bots when idle.
+  # Lichess currently limits bot-vs-bot games to 100 per day.
+  allow_matchmaking: true
   allow_during_games: false
   challenge_variant: "standard"
-  challenge_timeout: 20
+  challenge_timeout: 5
   challenge_initial_time:
     - 180
   challenge_increment:
     - 2
   opponent_rating_difference: 300
   rating_preference: "none"
-  challenge_mode: "casual"     # keep casual until you have read Lichess's bot rules for rated play
-  challenge_filter: none
+  challenge_mode: "casual"
+  challenge_filter: "coarse"
