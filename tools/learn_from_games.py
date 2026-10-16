@@ -40,11 +40,11 @@ def expected_score(rating_difference):
 
 
 def tune(games, username):
+    """Conservative outcome fallback. Move-level review is handled by review_games.py."""
     if not games:
-        return 160, 90, "No finished games found yet; using aggressive defaults."
+        return 80, 30, "No completed games; using conservative defaults."
 
     adjusted = []
-    raw_points = []
     for _, game in games:
         white = game["White"].casefold()
         black = game["Black"].casefold()
@@ -57,7 +57,6 @@ def tune(games, username):
         actual = 1.0 if result == "1-0" else 0.0 if result == "0-1" else 0.5
         if is_black:
             actual = 1.0 - actual
-        raw_points.append(actual)
 
         own_key, opponent_key = ("WhiteElo", "BlackElo") if is_white else ("BlackElo", "WhiteElo")
         try:
@@ -66,21 +65,29 @@ def tune(games, username):
             expected = expected_score(opponent_rating - own_rating) if own_rating > 0 and opponent_rating > 0 else 0.5
         except (TypeError, ValueError):
             expected = 0.5
-
-        # A loss to a bot rated much higher is less informative than a loss to an equal-rated opponent.
         adjusted.append(actual - expected)
 
     if not adjusted:
-        return 160, 90, "No games for the configured username; using aggressive defaults."
+        return 80, 30, "No games for the configured username; using conservative defaults."
 
     advantage = sum(adjusted) / len(adjusted)
-    rate = sum(raw_points) / len(raw_points)
+    # Game outcomes alone are noisy. Never raise attack/gambit settings after wins;
+    # only reduce them modestly when repeated results fall below rating expectation.
     if advantage <= -0.12:
-        return 125, 60, f"Recent score {rate:.0%}; below rating expectation by {abs(advantage):.2f}: reducing speculative risk."
-    if advantage >= 0.15:
-        return 175, 110, f"Recent score {rate:.0%}; above rating expectation by {advantage:.2f}: increasing initiative."
-    return 155, 85, f"Recent score {rate:.0%}; performance near expectation: keeping a balanced attacking style."
-
+        penalty = min(25, max(5, int(abs(advantage) * 30)))
+        return 80 - penalty, max(5, 30 - penalty), (
+            f"Recent performance below rating expectation by {abs(advantage):.2f}: "
+            "reducing speculative risk. Detailed move review is still needed."
+        )
+    if advantage <= -0.03:
+        return 75, 25, (
+            f"Recent results slightly below rating expectation ({advantage:.2f}): "
+            "using a modestly safer style."
+        )
+    return 80, 30, (
+        f"Recent rating-adjusted results {advantage:+.2f}: preserving conservative settings; "
+        "wins alone do not increase aggression."
+    )
 
 def main():
     parser = argparse.ArgumentParser()
