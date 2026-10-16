@@ -25,8 +25,8 @@ engine:
     Hash: 256
     OwnBook: true
     TimeUse: 80
-    GambitRisk: 100
-    Aggression: 165
+    GambitRisk: 65
+    Aggression: 115
     Contempt: 25
 
 abort_time: 30
