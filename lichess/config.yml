@@ -64,8 +64,8 @@ challenge:
     - bullet
   modes:
     - rated
-  # Incoming challenges must be within +/-150 rating points.
-  # Outgoing casual training challenges are sent by tools/matchmaking.py.
+  # Incoming challenges must be rated and within +/-150 rating points.
+  # Outgoing challenges are also rated-only and restricted by tools/matchmaking.py.
   rating_difference: 150
   max_simultaneous_games_per_user: 2
 
@@ -79,7 +79,7 @@ pgn_directory: "game_records"
 pgn_file_grouping: "game"
 
 matchmaking:
-  # Outgoing challenges are managed by tools/matchmaking.py for asymmetric rating bands.
+  # All outgoing challenges are handled by tools/matchmaking.py and must be rated.
   # Keep the random built-in matcher disabled so it cannot bypass that policy.
   allow_matchmaking: false
   allow_during_games: true
