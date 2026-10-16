@@ -44,12 +44,18 @@ inline int evaluate(const Position& pos) {
     int pawnCount[2]={0,0}, bishops[2]={0,0}, bishopSq[2]={-1,-1}, minors[2]={0,0};
     int knights[2]={0,0}, rooks[2]={0,0}, queens[2]={0,0};
     bool pawnAtt[2][128]={};
+    int centerControl[2]={0,0};
+    auto centralSquare=[](int s){ int f=fileOf(s), r=rankOf(s); return f>=2&&f<=5&&r>=2&&r<=5; };
     // first pass: pawns
     for(int s=0;s<128;s++){ if(!valid(s)){s+=7;continue;} int p=pos.b[s]; if(std::abs(p)!=PAWN) continue;
         int c=idx(color(p)), f=fileOf(s)+1, r=c==0?rankOf(s):7-rankOf(s);
         pawnFile[c][f]++; pawnMin[c][f]=std::min(pawnMin[c][f],r); pawnMax[c][f]=std::max(pawnMax[c][f],r); pawnCount[c]++;
         int d=color(p)*16; for(int df:{-1,1}){int t=s+d+df; if(valid(t))pawnAtt[c][t]=true;}
     }
+    // Pawn attacks help claim the central squares and their immediate approaches.
+    for(int c=0;c<2;c++)
+        for(int r=2;r<=5;r++) for(int f=2;f<=5;f++)
+            if(pawnAtt[c][r*16+f]) centerControl[c]+=2;
     int kingSq[2]={pos.kings[0],pos.kings[1]};
     int attackUnits[2]={0,0}, attackers[2]={0,0};
     // king zones (squares attacked/near king), by the defender colour
@@ -79,6 +85,12 @@ inline int evaluate(const Position& pos) {
                 mgS[c]+=pm[r]; egS[c]+=pe[r];
                 int kd=std::max(std::abs(fileOf(kingSq[e])-fileOf(s)),std::abs(rankOf(kingSq[e])-rankOf(s+fw)));
                 egS[c]+=kd*r; }
+            // Reward advanced central pawns that claim space without making material irrelevant.
+            if(f==4||f==5){
+                if(r>=3&&r<=5) mgS[c]+=12;
+                else if(r>=2) mgS[c]+=6;
+                if(r>=3) egS[c]+=4;
+            }
             // protected pawn
             if(pawnAtt[c][s]){mgS[c]+=5;egS[c]+=6;}
             continue;
@@ -86,13 +98,19 @@ inline int evaluate(const Position& pos) {
         if(pt==KING) continue;
         // piece activity
         int mob=0, ksAtt=0; bool attacksZone=false;
-        auto touch=[&](int t){ if(zone[e][t]){attacksZone=true;ksAtt++;} };
+        auto touch=[&](int t){
+            if(zone[e][t]){attacksZone=true;ksAtt++;}
+            if(centralSquare(t)) centerControl[c]++;
+        };
         if(pt==KNIGHT){ minors[c]++; knights[c]++; phase+=1;
             for(int d0:knightSteps){int t=s+d0; if(!valid(t))continue; if(color(pos.b[t])!=col&&!pawnAtt[e][t])mob++; touch(t);}
             mgS[c]+=(mob-4)*4; egS[c]+=(mob-4)*4;
             // outpost
             int r=c==0?rankOf(s):7-rankOf(s);
-            if(r>=3&&r<=5&&pawnAtt[c][s]&&!pawnAtt[e][s]){mgS[c]+=18;egS[c]+=10;}
+            if(r>=3&&r<=5&&pawnAtt[c][s]&&!pawnAtt[e][s]){
+                mgS[c]+=22; egS[c]+=12;
+                if(fileOf(s)==3||fileOf(s)==4){mgS[c]+=8;egS[c]+=4;}
+            }
             if(r>=1 && (c==0?rankOf(s)>0:rankOf(s)<7)) development[c]++;
             }
         else if(pt==BISHOP){ minors[c]++; bishops[c]++; bishopSq[c]=s; phase+=1;
@@ -112,6 +130,8 @@ inline int evaluate(const Position& pos) {
         if(attacksZone){ attackers[c]++; static const int w[7]={0,0,2,2,3,5,0};
             attackUnits[c]+=w[pt]*ksAtt+w[pt]; }
     }
+    // Central control and space are useful strategic goals, capped to preserve tactical/material balance.
+    for(int c=0;c<2;c++) mgS[c] += std::min(centerControl[c],16)*2;
     phase=std::min(phase,24);
     // king safety and attack
     int kingMg[2]={0,0};
