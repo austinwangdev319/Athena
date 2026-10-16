@@ -2,9 +2,9 @@ name: Athena checks
 
 on:
   push:
-    branches: ["feat/adaptive-matchmaking-time-strategy"]
+    branches: ["feat/adaptive-matchmaking-time-strategy", "feat/strategic-safety-and-self-learning"]
   pull_request:
-    branches: ["fix/embedded-ai-chatbot", "main"]
+    branches: ["feat/adaptive-matchmaking-time-strategy", "fix/embedded-ai-chatbot", "main"]
 
 jobs:
   test:
