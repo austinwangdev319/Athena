@@ -83,7 +83,8 @@ def read_finished_games(directory):
                     try:
                         game = chess.pgn.read_game(handle)
                     except (ValueError, IndexError):
-                        continue
+                        # Stop this file rather than risk retrying the same malformed text forever.
+                        break
                     if game is None:
                         break
                     if game.headers.get("Result") not in RESULTS:
@@ -169,14 +170,19 @@ class UCIAnalyzer:
             text=True,
             bufsize=1,
         )
-        self._send("uci")
-        self._wait_for("uciok")
-        self._send("setoption name OwnBook value false")
-        self._send("setoption name Aggression value " + str(BASE_AGGRESSION))
-        self._send("setoption name GambitRisk value " + str(BASE_GAMBIT_RISK))
-        self._send("setoption name Contempt value 0")
-        self._send("isready")
-        self._wait_for("readyok")
+        try:
+            self._send("uci")
+            self._wait_for("uciok")
+            self._send("setoption name OwnBook value false")
+            self._send("setoption name Aggression value " + str(BASE_AGGRESSION))
+            self._send("setoption name GambitRisk value " + str(BASE_GAMBIT_RISK))
+            self._send("setoption name Contempt value 0")
+            self._send("isready")
+            self._wait_for("readyok")
+        except Exception:
+            self.process.kill()
+            self.process.wait()
+            raise
 
     def _send(self, command):
         if self.process.poll() is not None:
@@ -284,6 +290,16 @@ def write_style(path, reviews):
     return aggression, gambit_risk, stats
 
 
+def activity_is_active(path):
+    if not path:
+        return False
+    try:
+        state = json.loads(Path(path).read_text(encoding="utf-8"))
+        return bool(state.get("active_game")) if isinstance(state, dict) else False
+    except (OSError, ValueError):
+        return False
+
+
 def load_state(path):
     path = Path(path)
     try:
@@ -296,6 +312,12 @@ def load_state(path):
 
 
 def review_once(args, state, analyzer=None):
+    if activity_is_active(args.activity_state):
+        aggression, risk, stats = write_style(args.output, state.get("reviews", []))
+        atomic_json(args.state, state)
+        print("Review skipped while Athena is playing; current safe style remains aggression="
+              + str(aggression) + ", gambit_risk=" + str(risk) + ".", flush=True)
+        return False
     games = read_finished_games(args.directory)
     if not state.get("initialized", False):
         # Do not unexpectedly spend hours reanalyzing a large existing archive.
@@ -369,6 +391,7 @@ def main():
     parser.add_argument("--engine", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--state", required=True)
+    parser.add_argument("--activity-state", default="")
     parser.add_argument("--report", default="game_records/athena_review_report.json")
     parser.add_argument("--nodes", type=int, default=DEFAULT_NODES)
     parser.add_argument("--max-positions", type=int, default=DEFAULT_MAX_POSITIONS)
