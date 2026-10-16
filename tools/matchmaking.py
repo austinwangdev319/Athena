@@ -89,7 +89,7 @@ def seconds_to_midnight():
 
 def load_state(path):
     state = {"day": utc_day(), "games_today": 0,
-             "recent_targets": {}, "last_attempt_ts": 0}
+             "recent_targets": {}, "last_attempt_ts": 0, "active_game": False}
     try:
         loaded = json.loads(path.read_text(encoding="utf-8"))
         if isinstance(loaded, dict):
@@ -234,9 +234,14 @@ def run(args):
             username = profile.get("username") or args.username
             active = api.get_active_games()
             if active:
+                state["active_game"] = True
+                save_state(state_path, state)
                 print("Matchmaker paused: " + str(len(active)) + " active game(s).", flush=True)
                 time.sleep(15)
                 continue
+            if state.get("active_game"):
+                state["active_game"] = False
+                save_state(state_path, state)
 
             if state.get("day") != utc_day():
                 state["day"] = utc_day()
@@ -314,13 +319,17 @@ def run(args):
 
             state["day"] = utc_day()
             state["games_today"] = int(state.get("games_today", 0)) + 1
+            state["active_game"] = True
             save_state(state_path, state)
             print("Game accepted. Daily safety count: " + str(state["games_today"])
                   + "/" + str(MAX_ACCEPTED_GAMES_PER_UTC_DAY) + ".", flush=True)
 
             while True:
                 time.sleep(15)
-                if not api.get_active_games():
+                still_active = bool(api.get_active_games())
+                state["active_game"] = still_active
+                save_state(state_path, state)
+                if not still_active:
                     break
             print("Game ended; matchmaking will resume after cooldown.", flush=True)
 
