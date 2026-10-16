@@ -5,7 +5,7 @@
 
 namespace ag {
 struct EvalParams {
-    int aggression = 90;    // 100 = neutral; lower values discourage premature king attacks
+    int aggression = 80;    // 100 = neutral; lower values discourage premature king attacks
     int contempt   = 25;    // centipawns; draws are scored slightly bad for the engine
 };
 inline EvalParams params;
