@@ -68,9 +68,9 @@ challenge:
   max_simultaneous_games_per_user: 2
 
 greeting:
-  hello: "Hi! I'm Athena, built by Austin: an aggressive gambit enthusiast. Good luck, and watch your king!"
+  hello: "Hi! I'm Athena, built by Austin. Good luck, you'll need it.""
   goodbye: "Good game."
-  hello_spectators: "Fun fact: Judit Polgar beat several world champions. Athena's plan: make your king nervous."
+  hello_spectators: "Ahh a witness! U ready to see me crush my opponent?"
   goodbye_spectators: "Thanks for watching."
 
 pgn_directory: "game_records"
