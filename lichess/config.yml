@@ -27,9 +27,9 @@ engine:
     Threads: 1
     Hash: 256
     OwnBook: true
-    TimeUse: 80
+    TimeUse: 100
     GambitRisk: 100
-    Aggression: 165
+    Aggression: 110
     Contempt: 25
 
 abort_time: 30
@@ -63,8 +63,10 @@ challenge:
     - rapid
     - bullet
   modes:
-    - casual
     - rated
+  # Incoming challenges must be within +/-150 rating points.
+  # Outgoing casual training challenges are sent by tools/matchmaking.py.
+  rating_difference: 150
   max_simultaneous_games_per_user: 2
 
 greeting:
@@ -77,9 +79,9 @@ pgn_directory: "game_records"
 pgn_file_grouping: "game"
 
 matchmaking:
-  # Actively challenge other Lichess bots when idle.
-  # Lichess limits bot-vs-bot games to 100 per day.
-  allow_matchmaking: true
+  # Outgoing challenges are managed by tools/matchmaking.py for asymmetric rating bands.
+  # Keep the random built-in matcher disabled so it cannot bypass that policy.
+  allow_matchmaking: false
   allow_during_games: true
   challenge_variant: "standard"
   challenge_timeout: 1
@@ -89,7 +91,7 @@ matchmaking:
   challenge_increment:
     - 0
     - 2
-  opponent_rating_difference: 800
-  rating_preference: "none"
-  challenge_mode: "random"
+  opponent_rating_difference: 150
+  rating_preference: "high"
+  challenge_mode: "rated"
   challenge_filter: "fine"
