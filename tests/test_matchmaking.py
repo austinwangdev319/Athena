@@ -23,26 +23,26 @@ class MatchmakingTests(unittest.TestCase):
         self.bots = [
             user("lower-edge", 1350), user("upper-edge", 1650),
             user("too-low", 1349), user("too-high", 1651),
-            user("training-edge", 2000), user("training-top-edge", 2500),
-            user("too-strong", 2501), user("inactive", 1500, games=0),
+            user("far-stronger", 2000), user("too-strong", 2501),
+            user("inactive", 1500, games=0),
             user("AAthena101", 1500),
         ]
 
-    def test_rated_band_is_plus_minus_150_inclusive(self):
+    def test_only_opponents_within_plus_minus_150_are_eligible(self):
         names = {u["username"] for u, _ in eligible_opponents(
-            self.bots, "AAthena101", "blitz", 1500, "rated", now=100000
+            self.bots, "AAthena101", "blitz", 1500, now=100000
         )}
         self.assertEqual(names, {"lower-edge", "upper-edge"})
+        self.assertNotIn("far-stronger", names)
+        self.assertNotIn("too-strong", names)
 
-    def test_training_band_is_500_to_1000_above(self):
-        names = {u["username"] for u, _ in eligible_opponents(
-            self.bots, "AAthena101", "blitz", 1500, "training", now=100000
-        )}
-        self.assertEqual(names, {"training-edge", "training-top-edge"})
+    def test_training_mode_is_not_supported(self):
+        with self.assertRaises(TypeError):
+            eligible_opponents(self.bots, "AAthena101", "blitz", 1500, "training")
 
     def test_recent_targets_are_skipped(self):
         names = {u["username"] for u, _ in eligible_opponents(
-            self.bots, "AAthena101", "blitz", 1500, "rated",
+            self.bots, "AAthena101", "blitz", 1500,
             {"lower-edge": 99950}, now=100000
         )}
         self.assertEqual(names, {"upper-edge"})
@@ -57,6 +57,19 @@ class MatchmakingTests(unittest.TestCase):
         games = [{"opponent": {"username": "BoTPlayer"}}]
         self.assertTrue(active_game_against(games, "botplayer"))
         self.assertFalse(active_game_against(games, "other"))
+
+    def test_outgoing_challenges_are_always_rated(self):
+        client = LichessAPI("test-token", "AAthena101")
+        with patch.object(client, "request", return_value=(200, {"id": "challenge-id"})) as request:
+            status, result = client.challenge("opponent-bot", 180, 0)
+        self.assertEqual(status, 200)
+        self.assertEqual(result["id"], "challenge-id")
+        request.assert_called_once_with("POST", "/api/challenge/opponent-bot", {
+            "rated": "true",
+            "variant": "standard",
+            "clock.limit": "180",
+            "clock.increment": "0",
+        })
 
     def test_ssl_context_verifies_certificates_and_hostnames(self):
         client = LichessAPI("test-token", "AAthena101")
