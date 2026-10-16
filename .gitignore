@@ -11,3 +11,4 @@ config.local.yml
 # Local game records and adaptive style profile
 game_records/
 athena_style.txt
+.DS_Store
