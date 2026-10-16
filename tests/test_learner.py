@@ -6,8 +6,8 @@ from tools.learn_from_games import expected_score, tune
 
 class LearnerTests(unittest.TestCase):
     def test_expected_score_decreases_against_stronger_opponent(self):
-        self.assertGreater(expected_score(500), 0.5)
-        self.assertLess(expected_score(-500), 0.5)
+        self.assertLess(expected_score(500), 0.5)
+        self.assertGreater(expected_score(-500), 0.5)
 
     def test_expected_loss_against_much_stronger_bot_does_not_force_passivity(self):
         games = [(1, {
