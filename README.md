@@ -2,12 +2,6 @@
 
 A UCI chess engine in C++17 that plays gambits.
 
-## Build
-
-    make
-
-## Run
-
 Load `athena` in any UCI interface (Cute Chess, Arena), or use it with [lichess-bot](https://github.com/lichess-bot-devs/lichess-bot) via `lichess/config.yml`.
 
 ## Options
@@ -33,10 +27,3 @@ Load `athena` in any UCI interface (Cute Chess, Arena), or use it with [lichess-
 
 The same lines are built into the engine. Set `BookFile` to add or replace lines without rebuilding.
 
-## Test
-
-    make test
-
-## License
-
-MIT
