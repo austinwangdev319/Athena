@@ -42,7 +42,7 @@ Athena is an engine, not a Lichess account. To have it play on the live Lichess 
    bash ./lichess/run.sh
    ```
 
-   The launcher builds Athena, copies the executable into `lichess-bot/engines/athena`, places Athena's config template at `lichess-bot/config.yml`, and starts `lichess-bot`. The token is supplied through the environment and is not written into this repository. The launcher replaces the target `config.yml`, so back up any custom configuration there first. On macOS, `lichess/start.command` provides a double-click launcher and stores the token in Keychain after the first prompt.
+   The launcher builds Athena, copies the executable into `lichess-bot/engines/athena`, places Athena's config template at `lichess-bot/config.yml`, and starts `lichess-bot`. The token is supplied through the environment and is not written into this repository. The launcher replaces the target `config.yml`, so back up any custom configuration there first. On macOS, run `chmod +x lichess/start.command` once, then double-click `lichess/start.command`. It asks for the token once and stores it in Keychain, not in the repository.
 
 5. Keep the process running. The bot accepts casual and rated challenges, can play up to three games simultaneously while reserving one slot for human challengers, and can issue matchmaking challenges while already playing. Lichess limits bot-vs-bot games to 100 per day.
 
