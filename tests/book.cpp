@@ -24,6 +24,18 @@ int main() {
             std::cerr << "Opening book did not sample expected first move " << required << "\n"; return 1;
         }
     }
+    Position sicilian;
+    sicilian.setFen(Position::startFen());
+    for (const char* move : {"e2e4", "c7c5"}) {
+        Move parsed = sicilian.parseMove(move);
+        if (!parsed) { std::cerr << "Could not construct Sicilian test position\n"; return 1; }
+        Undo undo;
+        sicilian.make(parsed, undo);
+    }
+    Move wing = bookMove(sicilian, book, 20, 150, rng);
+    if (!wing || wing.uci() != "b2b4") {
+        std::cerr << "Athena did not preserve the Wing Gambit vs the Sicilian\n"; return 1;
+    }
     std::cout << "Opening book test passed: " << book.size()
               << " valid lines; " << firstMoves.size() << " root moves sampled.\n";
     return 0;
