@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Rating-aware outgoing matchmaking for Athena.
+"""Rated-only matchmaking for Athena.
 
-Rated games are limited to opponents within +/-150 rating points. About one
-out of every four accepted games is a casual training challenge against a bot
-500-1000 points stronger, when one is available. This collects stronger-opponent
-games for the existing results-based style tuner; it is not neural-network training.
+Every outbound challenge is explicitly rated and limited to established bots
+within +/-150 points in the selected time-control category. There is no casual
+training mode or stronger-opponent exception.
 """
 import argparse
 import json
@@ -25,8 +24,6 @@ except ImportError:
 
 API_BASE = "https://lichess.org"
 CLOSE_RATING = 150
-TRAINING_MIN_ADVANTAGE = 500
-TRAINING_MAX_ADVANTAGE = 1000
 MAX_ACCEPTED_GAMES_PER_UTC_DAY = 80  # Leave room below Lichess's daily bot-vs-bot cap for inbound games.
 CHALLENGE_COOLDOWN_SECONDS = 65
 RECENT_TARGET_SECONDS = 6 * 60 * 60
@@ -59,9 +56,9 @@ def rating_for(profile, category, require_games=False):
     return int(rating)
 
 
-def eligible_opponents(users, username, category, own_rating, mode,
+def eligible_opponents(users, username, category, own_rating,
                        recent_targets=None, now=None):
-    """Return established online bots in the requested rating band."""
+    """Return established online bots no more than 150 points from Athena's rating."""
     recent_targets = recent_targets or {}
     now = time.time() if now is None else now
     result = []
@@ -75,14 +72,7 @@ def eligible_opponents(users, username, category, own_rating, mode,
         rating = rating_for(user, category, require_games=True)
         if rating is None:
             continue
-        delta = rating - own_rating
-        if mode == "rated":
-            eligible = abs(delta) <= CLOSE_RATING
-        elif mode == "training":
-            eligible = TRAINING_MIN_ADVANTAGE <= delta <= TRAINING_MAX_ADVANTAGE
-        else:
-            raise ValueError("mode must be rated or training")
-        if eligible:
+        if abs(rating - own_rating) <= CLOSE_RATING:
             result.append((user, rating))
     return result
 
@@ -98,7 +88,7 @@ def seconds_to_midnight():
 
 
 def load_state(path):
-    state = {"day": utc_day(), "games_today": 0, "games_since_training": 3,
+    state = {"day": utc_day(), "games_today": 0,
              "recent_targets": {}, "last_attempt_ts": 0}
     try:
         loaded = json.loads(path.read_text(encoding="utf-8"))
@@ -111,6 +101,8 @@ def load_state(path):
         state["games_today"] = 0
     if not isinstance(state.get("recent_targets"), dict):
         state["recent_targets"] = {}
+    # Discard the old training counter from state files created by older versions.
+    state.pop("games_since_training", None)
     return state
 
 
@@ -208,9 +200,10 @@ class LichessAPI:
                 continue
         return users
 
-    def challenge(self, username, base_time, increment, rated):
+    def challenge(self, username, base_time, increment):
+        # Rated is hard-coded on purpose: this matcher has no casual path.
         return self.request("POST", "/api/challenge/" + username, {
-            "rated": "true" if rated else "false",
+            "rated": "true",
             "variant": "standard",
             "clock.limit": str(base_time),
             "clock.increment": str(increment),
@@ -268,38 +261,25 @@ def run(args):
                 own_rating = rating_for(profile, category)
                 if own_rating is None:
                     continue
-                for user, rating in eligible_opponents(bots, username, category, own_rating, "rated", recent, now):
-                    choices.append(("rated", category, clocks, user, rating, own_rating))
-                for user, rating in eligible_opponents(bots, username, category, own_rating, "training", recent, now):
-                    choices.append(("training", category, clocks, user, rating, own_rating))
+                for user, rating in eligible_opponents(bots, username, category, own_rating, recent, now):
+                    choices.append((category, clocks, user, rating, own_rating))
 
-            training = [choice for choice in choices if choice[0] == "training"]
-            rated = [choice for choice in choices if choice[0] == "rated"]
-            # Play a casual training game after at most three normal games, if possible.
-            if int(state.get("games_since_training", 3)) >= 3 and training:
-                selected = random.choice(training)
-            elif rated:
-                selected = random.choice(rated)
-            elif training:
-                selected = random.choice(training)
-            else:
-                print("No eligible bots online: waiting 60 seconds.", flush=True)
+            if not choices:
+                print("No eligible rated bots within +/-150 online: waiting 60 seconds.", flush=True)
                 time.sleep(60)
                 continue
 
-            mode, category, clocks, target, target_rating, own_rating = selected
+            category, clocks, target, target_rating, own_rating = random.choice(choices)
             base_time, increment = random.choice(clocks)
             target_name = target.get("username", "")
-            is_rated = mode == "rated"
             delta = target_rating - own_rating
-            desc = "rated match within +/-150" if is_rated else "casual training +" + str(delta)
-            print("Seeking " + desc + ": " + target_name + " (" + str(target_rating)
-                  + ", Athena " + str(own_rating) + ", " + category + ", "
-                  + str(base_time) + "+" + str(increment) + ").", flush=True)
+            print("Seeking rated match (rating difference " + str(delta) + "): " + target_name
+                  + " (" + str(target_rating) + ", Athena " + str(own_rating)
+                  + ", " + category + ", " + str(base_time) + "+" + str(increment) + ").", flush=True)
 
             state["last_attempt_ts"] = time.time()
             save_state(state_path, state)
-            status, response = api.challenge(target_name, base_time, increment, is_rated)
+            status, response = api.challenge(target_name, base_time, increment)
             challenge_id = response.get("id") if isinstance(response, dict) else None
             if status != 200 or not challenge_id:
                 ratelimit = response.get("ratelimit", {}) if isinstance(response, dict) else {}
@@ -334,10 +314,6 @@ def run(args):
 
             state["day"] = utc_day()
             state["games_today"] = int(state.get("games_today", 0)) + 1
-            if mode == "training":
-                state["games_since_training"] = 0
-            else:
-                state["games_since_training"] = int(state.get("games_since_training", 0)) + 1
             save_state(state_path, state)
             print("Game accepted. Daily safety count: " + str(state["games_today"])
                   + "/" + str(MAX_ACCEPTED_GAMES_PER_UTC_DAY) + ".", flush=True)
