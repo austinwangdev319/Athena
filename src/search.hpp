@@ -200,7 +200,8 @@ public:
                     best>=beta?B_LOWER:(best>origAlpha?B_EXACT:B_UPPER),ply);
         return best;
     }
-    int search(int depth,int alpha,int beta,int ply,bool pv,bool allowNull,Move excluded=Move()) {
+    int search(int depth,int alpha,int beta,int ply,bool pv,bool allowNull,
+               Move excluded=Move(),bool allowProbCut=true,bool allowIID=true) {
         pvLen[ply]=0;
         if(depth<=0)return qsearch(alpha,beta,ply);
         ++nodes; selDepth=std::max(selDepth,ply);
@@ -227,14 +228,63 @@ public:
             if(depth<=2&&eval+280*depth<alpha){int q=qsearch(alpha,beta,ply);if(q<=alpha)return q;}   // razoring
             if(allowNull&&depth>=3&&eval>=beta&&npm>value[BISHOP]&&beta>-MATE+MAX_PLY){
                 int R=3+depth/4+std::min((eval-beta)/200,2); Undo u; pos.makeNull(u); prevMove[ply]=Move();
-                int s=-search(depth-1-R,-beta,-beta+1,ply+1,false,false); pos.undoNull(u);
+                int s=-search(depth-1-R,-beta,-beta+1,ply+1,false,false,
+                              Move(),allowProbCut,allowIID); pos.undoNull(u);
                 if(sh.stop.load(std::memory_order_relaxed))return 0;
                 if(s>=beta){ if(s>=MATE-MAX_PLY)s=beta;
                     if(depth<10)return s;
-                    int v=search(depth-R,beta-1,beta,ply,false,false); if(v>=beta)return s; }
+                    int v=search(depth-R,beta-1,beta,ply,false,false,
+                                 Move(),allowProbCut,allowIID); if(v>=beta)return s; }
             }
         }
-        if(depth>=5&&!ttm&&pv)depth--; // cheap internal iterative reduction
+        // ProbCut: at non-PV nodes, test a few sound-looking tactical moves at a
+        // raised beta threshold. A reduced search must confirm the quiescence result.
+        // It is disabled in its own verification subtree to prevent cascading cuts.
+        if(allowProbCut && !root && !pv && !inChk && !excluded && depth>=5
+           && std::abs(beta)<MATE-MAX_PLY && npm>0) {
+            const int margin=improving?160:200;
+            const int raisedBeta=std::min(beta+margin,MATE-MAX_PLY-1);
+            if(raisedBeta>beta) {
+                std::vector<Move> tactical;
+                pos.pseudo(tactical,true);
+                std::vector<int> tacticalScores(tactical.size());
+                for(size_t i=0;i<tactical.size();i++)
+                    tacticalScores[i]=orderScore(tactical[i],ttm,ply,prev);
+                int tried=0;
+                for(int i=0;i<(int)tactical.size() && tried<3;i++) {
+                    sortMoves(tactical,tacticalScores,i);
+                    Move m=tactical[i];
+                    // Avoid spending ProbCut effort on clearly losing exchanges.
+                    if(see(pos,m)<-80) continue;
+                    Undo u;
+                    if(!pos.make(m,u)) continue;
+                    ++tried;
+                    int qscore=-qsearch(-raisedBeta,-raisedBeta+1,ply+1);
+                    int score=-INF;
+                    if(!sh.stop.load(std::memory_order_relaxed) && qscore>=raisedBeta)
+                        score=-search(depth-4,-raisedBeta,-raisedBeta+1,ply+1,
+                                      false,false,Move(),false,false);
+                    pos.undo(m,u);
+                    if(sh.stop.load(std::memory_order_relaxed)) return 0;
+                    if(score>=raisedBeta) {
+                        sh.tt.store(pos.hash,m,score,depth-4,B_LOWER,ply);
+                        return score;
+                    }
+                }
+            }
+        }
+
+        // Genuine internal iterative deepening (IID): discover a useful hash move
+        // before the main search when a sufficiently deep PV node has no hash move.
+        if(allowIID && pv && !ttm && !inChk && !excluded && depth>=6) {
+            search(depth-2,-INF,INF,ply,true,false,excluded,false,false);
+            if(sh.stop.load(std::memory_order_relaxed)) return 0;
+            tt=sh.tt.probe(pos.hash,ply);
+            ttm=tt.hit?tt.move:Move();
+            pvLen[ply]=0; // discard the auxiliary PV; the full-depth search rebuilds it.
+        }
+
+        if(depth>=5&&!ttm&&pv)depth--; // internal iterative reduction fallback
         std::vector<Move> mv; pos.pseudo(mv); std::vector<int> sc(mv.size());
         for(size_t i=0;i<mv.size();i++)sc[i]=orderScore(mv[i],ttm,ply,prev);
         int best=-INF,origAlpha=alpha,legal=0,quietCount=0; Move bestMove; Move quiets[64];
@@ -251,7 +301,8 @@ public:
             bool gives=pos.inCheck();
             if(!root&&best>-MATE+MAX_PLY&&quiet&&!gives&&!inChk&&depth<=5&&legal>1&&eval+110+105*depth<=alpha&&!pv){pos.undo(m,u);continue;} // futility
             int newDepth=depth-1, s;
-            if(legal==1) s=-search(newDepth,-beta,-alpha,ply+1,pv,true);
+            if(legal==1) s=-search(newDepth,-beta,-alpha,ply+1,pv,true,
+                                  Move(),allowProbCut,allowIID);
             else {
                 int R=0;
                 if(depth>=3&&legal>=3&&quiet){
@@ -263,9 +314,12 @@ public:
                     R-=std::clamp(history[idx(-pos.side)][m.from()][m.to()]/6000,-2,2);
                     R=std::clamp(R,0,newDepth-1);
                 }
-                s=-search(newDepth-R,-alpha-1,-alpha,ply+1,false,true);
-                if(s>alpha&&R>0)s=-search(newDepth,-alpha-1,-alpha,ply+1,false,true);
-                if(s>alpha&&s<beta&&pv)s=-search(newDepth,-beta,-alpha,ply+1,true,true);
+                s=-search(newDepth-R,-alpha-1,-alpha,ply+1,false,true,
+                           Move(),allowProbCut,allowIID);
+                if(s>alpha&&R>0)s=-search(newDepth,-alpha-1,-alpha,ply+1,false,true,
+                                          Move(),allowProbCut,allowIID);
+                if(s>alpha&&s<beta&&pv)s=-search(newDepth,-beta,-alpha,ply+1,true,true,
+                                                  Move(),allowProbCut,allowIID);
             }
             pos.undo(m,u);
             if(sh.stop.load(std::memory_order_relaxed)){ if(root)aborted=true; return 0; }
