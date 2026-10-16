@@ -139,6 +139,33 @@ public:
         int& h=history[idx(side)][m.from()][m.to()];
         h+=bonus-h*std::abs(bonus)/16384;
     }
+    bool isAdvancedPassedPawn(int sq, int col) const {
+        if(!valid(sq) || pos.b[sq] != col*PAWN) return false;
+        int relativeRank=col==WHITE ? rankOf(sq) : 7-rankOf(sq);
+        if(relativeRank<4) return false;
+        const int fw=col*16;
+        for(int df=-1;df<=1;df++) {
+            for(int t=sq+fw+df;valid(t);t+=fw) {
+                if(pos.b[t]==-col*PAWN) return false;
+            }
+        }
+        return true;
+    }
+    bool hasUrgentPassedPawn() const {
+        for(int sq=0;sq<128;sq++) {
+            if(!valid(sq)){sq+=7;continue;}
+            int p=pos.b[sq];
+            if(std::abs(p)==PAWN && isAdvancedPassedPawn(sq,color(p))) {
+                int relativeRank=color(p)==WHITE ? rankOf(sq) : 7-rankOf(sq);
+                if(relativeRank>=5) return true;
+            }
+        }
+        return false;
+    }
+    bool movesPassedPawn(Move m) const {
+        int p=pos.b[m.from()];
+        return std::abs(p)==PAWN && isAdvancedPassedPawn(m.from(),color(p));
+    }
     int qsearch(int alpha,int beta,int ply) {
         ++nodes; selDepth=std::max(selDepth,ply); pvLen[ply]=0;
         if(shouldStop())return 0;
@@ -162,10 +189,9 @@ public:
         for(int i=0;i<(int)mv.size();i++){
             sortMoves(mv,sc,i); Move m=mv[i];
             if(!inChk){
-                if(m.promotion()&&m.promotion()!=QUEEN)continue;
                 int gainv=m.ep()?value[PAWN]:value[std::abs(pos.b[m.to()])];
-                if(stand+gainv+220<alpha&&!m.promotion())continue;        // delta pruning
-                if(see(pos,m)<0)continue;
+                if(stand+gainv+220<alpha&&!m.promotion())continue;        // delta pruning; never prune promotions
+                if(see(pos,m)<0&&!m.promotion())continue;
             }
             Undo u; if(!pos.make(m,u))continue; ++legal;
             int s=-qsearch(-beta,-alpha,ply+1); pos.undo(m,u);
@@ -198,11 +224,12 @@ public:
         int eval = inChk?-INF:evaluate(pos); staticEval[ply]=eval;
         bool improving = !inChk && ply>=2 && staticEval[ply-2]!=-INF && eval>staticEval[ply-2];
         int npm=pos.nonPawnMaterial(pos.side);
+        const bool urgentPawnRace=hasUrgentPassedPawn();
         Move prev=ply>0?prevMove[ply-1]:Move();
         if(!pv&&!inChk&&!excluded){
-            if(depth<=6&&eval-85*depth>=beta&&std::abs(beta)<MATE-MAX_PLY&&npm>0)return eval;   // reverse futility
-            if(depth<=2&&eval+280*depth<alpha){int q=qsearch(alpha,beta,ply);if(q<=alpha)return q;}   // razoring
-            if(allowNull&&depth>=3&&eval>=beta&&npm>value[BISHOP]&&beta>-MATE+MAX_PLY){
+            if(!urgentPawnRace&&depth<=6&&eval-85*depth>=beta&&std::abs(beta)<MATE-MAX_PLY&&npm>0)return eval;   // reverse futility
+            if(!urgentPawnRace&&depth<=2&&eval+280*depth<alpha){int q=qsearch(alpha,beta,ply);if(q<=alpha)return q;}   // razoring
+            if(!urgentPawnRace&&allowNull&&depth>=3&&eval>=beta&&npm>value[BISHOP]&&beta>-MATE+MAX_PLY){
                 int R=3+depth/4+std::min((eval-beta)/200,2); Undo u; pos.makeNull(u); prevMove[ply]=Move();
                 int s=-search(depth-1-R,-beta,-beta+1,ply+1,false,false); pos.undoNull(u);
                 if(sh.stop.load(std::memory_order_relaxed))return 0;
@@ -220,18 +247,22 @@ public:
             if(m==excluded)continue;
             if(root&&!sh.limits.searchmoves.empty()&&std::find(sh.limits.searchmoves.begin(),sh.limits.searchmoves.end(),m)==sh.limits.searchmoves.end())continue;
             bool quiet=!m.tactical();
+            const bool passerMove=quiet&&movesPassedPawn(m);
             if(!root&&best>-MATE+MAX_PLY&&!inChk&&legal>0){
-                if(quiet&&depth<=4&&legal>=3+depth*depth)continue;            // late move pruning
-                if(!quiet&&depth<=5&&!m.promotion()&&see(pos,m)<-90*depth)continue;
+                if(!urgentPawnRace&&quiet&&depth<=4&&legal>=3+depth*depth)continue; // late move pruning
+                if(!urgentPawnRace&&!quiet&&depth<=5&&!m.promotion()&&see(pos,m)<-90*depth)continue;
             }
             Undo u; if(!pos.make(m,u))continue; ++legal; prevMove[ply]=m;
             bool gives=pos.inCheck();
-            if(!root&&best>-MATE+MAX_PLY&&quiet&&!gives&&!inChk&&depth<=5&&legal>1&&eval+110+105*depth<=alpha&&!pv){pos.undo(m,u);continue;} // futility
-            int newDepth=depth-1, s;
+            if(!urgentPawnRace&&!root&&best>-MATE+MAX_PLY&&quiet&&!gives&&!inChk&&depth<=5&&legal>1&&eval+110+105*depth<=alpha&&!pv){pos.undo(m,u);continue;} // futility
+            int newDepth=depth-1;
+            // Keep advanced passed-pawn pushes and all promotions fully searched.
+            if(m.promotion()||(passerMove&&depth<=6)) ++newDepth;
+            int s;
             if(legal==1) s=-search(newDepth,-beta,-alpha,ply+1,pv,true);
             else {
                 int R=0;
-                if(depth>=3&&legal>=3&&quiet){
+                if(!urgentPawnRace&&depth>=3&&legal>=3&&quiet&&!passerMove){
                     R=lmr[std::min(depth,63)][std::min(legal,63)];
                     if(pv) R--;
                     if(gives) R--;
