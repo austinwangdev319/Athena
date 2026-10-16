@@ -13,9 +13,15 @@ import random
 import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+import ssl
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+
+try:
+    import certifi
+except ImportError:
+    certifi = None
 
 API_BASE = "https://lichess.org"
 CLOSE_RATING = 150
@@ -121,6 +127,14 @@ class LichessAPI:
             "Authorization": "Bearer " + token,
             "User-Agent": "Athena-Lichess-Matchmaker/1.0 (" + username + ")",
         }
+        # urllib does not automatically use certifi's CA bundle. On some macOS
+        # Python installs its default certificate paths are missing or outdated.
+        self.ca_bundle = certifi.where() if certifi is not None else None
+        self.ssl_context = (
+            ssl.create_default_context(cafile=self.ca_bundle)
+            if self.ca_bundle
+            else ssl.create_default_context()
+        )
 
     def request(self, method, path, data=None):
         url = API_BASE + path
@@ -131,13 +145,34 @@ class LichessAPI:
             headers["Content-Type"] = "application/x-www-form-urlencoded"
         req = Request(url, data=body, headers=headers, method=method)
         try:
-            with urlopen(req, timeout=15) as response:
+            with urlopen(req, timeout=15, context=self.ssl_context) as response:
                 raw = response.read().decode("utf-8", errors="replace")
                 status = response.status
         except HTTPError as exc:
             raw = exc.read().decode("utf-8", errors="replace")
             status = exc.code
-        except (URLError, TimeoutError, OSError) as exc:
+        except URLError as exc:
+            if isinstance(exc.reason, ssl.SSLCertVerificationError):
+                if self.ca_bundle:
+                    advice = (
+                        "The request was checked against certifi's CA bundle at "
+                        + self.ca_bundle
+                        + ". Update it with the same Python environment's "
+                        + "'python -m pip install --upgrade certifi'. If verification "
+                        + "still fails, check for a network proxy or local security "
+                        + "software requiring its CA certificate to be trusted."
+                    )
+                else:
+                    advice = (
+                        "certifi is not installed in this Python environment. Run "
+                        + "'python -m pip install --upgrade certifi' using the Python "
+                        + "environment that launches Athena, then restart it."
+                    )
+                raise RuntimeError(
+                    "TLS certificate verification failed for Lichess. " + advice
+                ) from exc
+            raise RuntimeError("Lichess request failed: " + str(exc)) from exc
+        except (TimeoutError, OSError) as exc:
             raise RuntimeError("Lichess request failed: " + str(exc)) from exc
         try:
             parsed = json.loads(raw) if raw.strip() else {}
