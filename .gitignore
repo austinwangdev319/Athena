@@ -7,3 +7,7 @@ __pycache__/
 *.pgn
 config.local.yml
 .env
+
+# Local game records and adaptive style profile
+game_records/
+athena_style.txt
