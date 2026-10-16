@@ -1,6 +1,3 @@
-# Athena Lichess-bot configuration template.
-# The official lichess-bot runner replaces this token from the
-# LICHESS_BOT_TOKEN environment variable at startup. Never commit a real token.
 token: "set-via-LICHESS_BOT_TOKEN-env-var"
 url: "https://lichess.org/"
 

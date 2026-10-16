@@ -1,6 +1,6 @@
 CXX ?= g++
 CXXFLAGS ?= -O3 -std=c++17 -pthread -DNDEBUG -Wall -Wextra
-ARCH ?= -march=x86-64-v2
+ARCH ?= 
 
 athena: src/main.cpp src/chess.hpp src/eval.hpp src/search.hpp src/book.hpp src/gambits.inc
 	$(CXX) $(CXXFLAGS) $(ARCH) -o $@ src/main.cpp
