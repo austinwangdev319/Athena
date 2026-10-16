@@ -14,10 +14,19 @@ struct Engine {
     SearchShared sh; Position pos; int hashMb=64, threadCount=1; bool ownBook=true; int bookDepth=16;
     int gambitRisk=60; std::thread searcher; std::mutex m; bool searching=false;
     std::vector<std::unique_ptr<Worker>> workers; std::mt19937_64 rng{std::random_device{}()};
-    std::vector<BookEntry> book; int timeUse=130;
+    std::vector<BookEntry> book; int timeUse=80;
     Engine() { sh.tt.resize(hashMb); book=builtinBook(); }
     ~Engine() { stopSearch(); }
     void stopSearch() { sh.stop=true; sh.pondering=false; if(searcher.joinable()) searcher.join(); searching=false; }
+    void loadLearnedStyle() {
+        std::ifstream f("../athena_style.txt");
+        if(!f) { f.clear(); f.open("athena_style.txt"); }
+        std::string key; int value;
+        while(f >> key >> value) {
+            if(key=="aggression") params.aggression=std::clamp(value,100,190);
+            else if(key=="gambit_risk") gambitRisk=std::clamp(value,40,130);
+        }
+    }
     void setPosition(std::istringstream& in) {
         std::string tok, fen; in>>tok; Position p;
         if(tok=="startpos") { p.setFen(Position::startFen()); in>>tok; }
@@ -45,11 +54,15 @@ struct Engine {
         sh.softMs=0; sh.hardMs=0;
         if(L.movetime>0) { sh.softMs=sh.hardMs=std::max<int64_t>(1,L.movetime-oh); }
         else if(t>0 || inc>0) {
-            int mtg=L.movestogo>0?std::min(L.movestogo,50):std::max(22,40-pos.fullmove/3); 
+            int mtg=L.movestogo>0?std::min(L.movestogo,50):std::max(22,40-pos.fullmove/3);
             int64_t avail=std::max<int64_t>(1,t-oh*2);
             int64_t base=avail/mtg + inc*3/4;
-            sh.softMs=std::min<int64_t>(base*timeUse/100,avail*35/100);
-            sh.hardMs=std::min<int64_t>(base*4*timeUse/100,avail*60/100);
+            // Practical targets: bullet <1s, blitz ~2-3s, longer games ~5s.
+            // Remaining clock time always caps these targets.
+            int64_t softCap = t<=90000 ? 650 : (t<=360000 ? 2500 : 5000);
+            int64_t hardCap = t<=90000 ? 900 : (t<=360000 ? 3000 : 6500);
+            sh.softMs=std::min({base*timeUse/100,avail*18/100,softCap});
+            sh.hardMs=std::min({base*150*timeUse/10000,avail*25/100,hardCap});
             sh.hardMs=std::max<int64_t>(sh.hardMs,5);
             sh.softMs=std::max<int64_t>(sh.softMs,2);
             if(sh.softMs>sh.hardMs) sh.softMs=sh.hardMs;
@@ -126,14 +139,14 @@ int main(int argc,char** argv) {
                 "option name Move Overhead type spin default 60 min 0 max 5000\n"
                 "option name OwnBook type check default true\n"
                 "option name BookFile type string default <empty>\n"
-                "option name TimeUse type spin default 130 min 30 max 300\n"
+                "option name TimeUse type spin default 80 min 30 max 300\n"
                 "option name BookDepth type spin default 16 min 0 max 40\n"
                 "option name GambitRisk type spin default 60 min 0 max 150\n"
                 "option name Aggression type spin default 80 min 50 max 250\n"
                 "option name Contempt type spin default 25 min -100 max 100\n"
                 "uciok"<<std::endl;
         } else if(cmd=="isready") std::cout<<"readyok"<<std::endl;
-        else if(cmd=="ucinewgame") { e.stopSearch(); e.sh.tt.clear(); e.pos=Position(); }
+        else if(cmd=="ucinewgame") { e.stopSearch(); e.sh.tt.clear(); e.pos=Position(); e.loadLearnedStyle(); }
         else if(cmd=="position") e.setPosition(in);
         else if(cmd=="go") e.go(in);
         else if(cmd=="stop") { e.sh.pondering=false; e.sh.stop=true; if(e.searcher.joinable()) e.searcher.join(); }
