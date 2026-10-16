@@ -8,8 +8,9 @@ athena: src/main.cpp src/chess.hpp src/eval.hpp src/search.hpp src/book.hpp src/
 test: tests/perft.cpp tests/book.cpp src/chess.hpp src/book.hpp src/gambits.inc src/standard_book.inc
 	$(CXX) -O2 -std=c++17 -o perft_test tests/perft.cpp && ./perft_test
 	$(CXX) -O2 -std=c++17 -pthread -o book_test tests/book.cpp && ./book_test
-	python3 -m py_compile tools/matchmaking.py tests/test_matchmaking.py
+	python3 -m py_compile tools/matchmaking.py tools/learn_from_games.py tests/test_matchmaking.py tests/test_learner.py
 	python3 tests/test_matchmaking.py
+	python3 tests/test_learner.py
 
 book:
 	python3 tools/build_book.py
