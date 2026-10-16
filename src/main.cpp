@@ -12,7 +12,7 @@ static const char* NAME = "Athena 0.2";
 
 struct Engine {
     SearchShared sh; Position pos; int hashMb=64, threadCount=1; bool ownBook=true; int bookDepth=16;
-    int gambitRisk=60; std::thread searcher; std::mutex m; bool searching=false;
+    int gambitRisk=65; std::thread searcher; std::mutex m; bool searching=false;
     std::vector<std::unique_ptr<Worker>> workers; std::mt19937_64 rng{std::random_device{}()};
     std::vector<BookEntry> book; int timeUse=80;
     Engine() { sh.tt.resize(hashMb); book=builtinBook(); }
@@ -113,7 +113,7 @@ struct Engine {
         else if(name=="TimeUse") timeUse=std::clamp(std::atoi(val.c_str()),30,300);
         else if(name=="BookDepth") bookDepth=std::clamp(std::atoi(val.c_str()),0,40);
         else if(name=="GambitRisk") gambitRisk=std::clamp(std::atoi(val.c_str()),0,150);
-        else if(name=="Aggression") params.aggression=std::clamp(std::atoi(val.c_str()),50,250);
+        else if(name=="Aggression") params.aggression=std::clamp(std::atoi(val.c_str()),50,200);
         else if(name=="Contempt") params.contempt=std::clamp(std::atoi(val.c_str()),-100,100);
     }
 };
@@ -141,8 +141,8 @@ int main(int argc,char** argv) {
                 "option name BookFile type string default <empty>\n"
                 "option name TimeUse type spin default 80 min 30 max 300\n"
                 "option name BookDepth type spin default 16 min 0 max 40\n"
-                "option name GambitRisk type spin default 60 min 0 max 150\n"
-                "option name Aggression type spin default 80 min 50 max 250\n"
+                "option name GambitRisk type spin default 65 min 0 max 150\n"
+                "option name Aggression type spin default 110 min 50 max 200\n"
                 "option name Contempt type spin default 25 min -100 max 100\n"
                 "uciok"<<std::endl;
         } else if(cmd=="isready") std::cout<<"readyok"<<std::endl;
