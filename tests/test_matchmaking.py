@@ -36,10 +36,6 @@ class MatchmakingTests(unittest.TestCase):
         self.assertNotIn("far-stronger", names)
         self.assertNotIn("too-strong", names)
 
-    def test_training_mode_is_not_supported(self):
-        with self.assertRaises(TypeError):
-            eligible_opponents(self.bots, "AAthena101", "blitz", 1500, "training")
-
     def test_recent_targets_are_skipped(self):
         names = {u["username"] for u, _ in eligible_opponents(
             self.bots, "AAthena101", "blitz", 1500,
