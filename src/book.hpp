@@ -56,12 +56,12 @@ Move bookMove(const Position& cur,const std::vector<BookEntry>& book,int maxPly,
     int played=int(hist.size())-1; if(played>=maxPly) return Move();
     // Athena's signature: always open 1.e4, and answer the Sicilian with the Wing Gambit.
     if(cur.side==WHITE && played==0) {
-        Move e4=cur.parseMove("e2e4"); if(e4) return e4;
+        Move e4=Position(cur).parseMove("e2e4"); if(e4) return e4;
     }
     if(cur.side==WHITE && played==2 &&
        cur.b[parseSquare("e4")]==WHITE*PAWN &&
        cur.b[parseSquare("c5")]==BLACK*PAWN) {
-        Move wing=cur.parseMove("b2b4"); if(wing) return wing;
+        Move wing=Position(cur).parseMove("b2b4"); if(wing) return wing;
     }
     std::vector<std::pair<Move,int>> cands;
     for(const auto& line:book) {

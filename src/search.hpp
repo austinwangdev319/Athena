@@ -11,6 +11,7 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <thread>
 
 namespace ag {
@@ -27,15 +28,28 @@ enum Bound { B_NONE=0, B_UPPER=1, B_LOWER=2, B_EXACT=3 };
 struct TTData { Move move; int score=0, depth=-1; int bound=B_NONE; bool hit=false; };
 class TT {
     struct Entry { std::atomic<uint64_t> key{0}, data{0}; };
-    Entry* table=nullptr; size_t mask=0, count=0; std::atomic<uint8_t> age{0};
+    std::unique_ptr<Entry[]> table; size_t mask=0, count=0; std::atomic<uint8_t> age{0};
 public:
-    ~TT() { std::free(table); }
     void resize(size_t mb) {
-        std::free(table); size_t n=1; while((n*2)*sizeof(Entry) <= mb*1024*1024) n*=2;
-        count=n; mask=n-1; table=static_cast<Entry*>(std::calloc(n,sizeof(Entry)));
-        if(!table) { count=1<<16; mask=count-1; table=static_cast<Entry*>(std::calloc(count,sizeof(Entry))); }
+        size_t n=1;
+        while((n*2)*sizeof(Entry) <= mb*1024*1024) n*=2;
+        std::unique_ptr<Entry[]> next(new(std::nothrow) Entry[n]);
+        if(!next) {
+            n=1<<16;
+            next.reset(new(std::nothrow) Entry[n]);
+        }
+        if(!next) throw std::bad_alloc();
+        table=std::move(next);
+        count=n; mask=n-1;
+        clear();
     }
-    void clear() { std::memset(static_cast<void*>(table),0,count*sizeof(Entry)); age=0; }
+    void clear() {
+        for(size_t i=0;i<count;i++) {
+            table[i].key.store(0,std::memory_order_relaxed);
+            table[i].data.store(0,std::memory_order_relaxed);
+        }
+        age=0;
+    }
     void newSearch() { age=(age+1)&63; }
     static int toTT(int s,int ply) { return s>=MATE-MAX_PLY ? s+ply : (s<=-MATE+MAX_PLY ? s-ply : s); }
     static int fromTT(int s,int ply) { return s>=MATE-MAX_PLY ? s-ply : (s<=-MATE+MAX_PLY ? s+ply : s); }
@@ -111,7 +125,14 @@ public:
     }
     bool shouldStop() {
         if(sh.stop.load(std::memory_order_relaxed))return true;
-        if(sh.limits.nodes && sh.totalNodes.load(std::memory_order_relaxed)+nodes>=sh.limits.nodes){sh.stop=true;return true;}
+        // Batch the shared node counter to avoid one contended atomic increment per node.
+        // Unreported local nodes are included in the limit check; multi-thread searches may
+        // exceed the requested limit by at most a small batch per worker.
+        if(sh.limits.nodes) {
+            if((nodes&63ULL)==0) sh.totalNodes.fetch_add(64,std::memory_order_relaxed);
+            uint64_t counted=sh.totalNodes.load(std::memory_order_relaxed)+(nodes&63ULL);
+            if(counted>=sh.limits.nodes){sh.stop=true;return true;}
+        }
         if(id==0 && (nodes&1023)==0){
             if(!sh.pondering && !sh.limits.infinite && sh.hardMs>0 && nowMs()-sh.start>=sh.hardMs){sh.stop=true;return true;}
         }
@@ -143,8 +164,9 @@ public:
         ++nodes; selDepth=std::max(selDepth,ply); pvLen[ply]=0;
         if(shouldStop())return 0;
         if(ply>=MAX_PLY-1)return evaluate(pos);
-        if(pos.halfmove>=100||pos.insufficient()) return drawScore(ply);
+        if(pos.halfmove>=100||pos.repetition(2)||pos.insufficient()) return drawScore(ply);
         bool inChk=pos.inCheck();
+        int origAlpha=alpha;
         TTData tt=sh.tt.probe(pos.hash,ply);
         if(tt.hit && ((tt.bound==B_EXACT)||(tt.bound==B_LOWER&&tt.score>=beta)||(tt.bound==B_UPPER&&tt.score<=alpha))) return tt.score;
         int stand=-INF;
@@ -174,10 +196,12 @@ public:
         }
         if(inChk&&!legal)return -MATE+ply;
         if(sh.stop.load(std::memory_order_relaxed))return 0;
-        sh.tt.store(pos.hash,bestMove,best,0,best>=beta?B_LOWER:B_UPPER,ply);
+        sh.tt.store(pos.hash,bestMove,best,0,
+                    best>=beta?B_LOWER:(best>origAlpha?B_EXACT:B_UPPER),ply);
         return best;
     }
-    int search(int depth,int alpha,int beta,int ply,bool pv,bool allowNull,Move excluded=Move()) {
+    int search(int depth,int alpha,int beta,int ply,bool pv,bool allowNull,
+               Move excluded=Move(),bool allowProbCut=true,bool allowIID=true) {
         pvLen[ply]=0;
         if(depth<=0)return qsearch(alpha,beta,ply);
         ++nodes; selDepth=std::max(selDepth,ply);
@@ -204,14 +228,63 @@ public:
             if(depth<=2&&eval+280*depth<alpha){int q=qsearch(alpha,beta,ply);if(q<=alpha)return q;}   // razoring
             if(allowNull&&depth>=3&&eval>=beta&&npm>value[BISHOP]&&beta>-MATE+MAX_PLY){
                 int R=3+depth/4+std::min((eval-beta)/200,2); Undo u; pos.makeNull(u); prevMove[ply]=Move();
-                int s=-search(depth-1-R,-beta,-beta+1,ply+1,false,false); pos.undoNull(u);
+                int s=-search(depth-1-R,-beta,-beta+1,ply+1,false,false,
+                              Move(),allowProbCut,allowIID); pos.undoNull(u);
                 if(sh.stop.load(std::memory_order_relaxed))return 0;
                 if(s>=beta){ if(s>=MATE-MAX_PLY)s=beta;
                     if(depth<10)return s;
-                    int v=search(depth-R,beta-1,beta,ply,false,false); if(v>=beta)return s; }
+                    int v=search(depth-R,beta-1,beta,ply,false,false,
+                                 Move(),allowProbCut,allowIID); if(v>=beta)return s; }
             }
         }
-        if(depth>=5&&!ttm&&pv)depth--; // cheap internal iterative reduction
+        // ProbCut: at non-PV nodes, test a few sound-looking tactical moves at a
+        // raised beta threshold. A reduced search must confirm the quiescence result.
+        // It is disabled in its own verification subtree to prevent cascading cuts.
+        if(allowProbCut && !root && !pv && !inChk && !excluded && depth>=5
+           && std::abs(beta)<MATE-MAX_PLY && npm>0) {
+            const int margin=improving?160:200;
+            const int raisedBeta=std::min(beta+margin,MATE-MAX_PLY-1);
+            if(raisedBeta>beta) {
+                std::vector<Move> tactical;
+                pos.pseudo(tactical,true);
+                std::vector<int> tacticalScores(tactical.size());
+                for(size_t i=0;i<tactical.size();i++)
+                    tacticalScores[i]=orderScore(tactical[i],ttm,ply,prev);
+                int tried=0;
+                for(int i=0;i<(int)tactical.size() && tried<3;i++) {
+                    sortMoves(tactical,tacticalScores,i);
+                    Move m=tactical[i];
+                    // Avoid spending ProbCut effort on clearly losing exchanges.
+                    if(see(pos,m)<-80) continue;
+                    Undo u;
+                    if(!pos.make(m,u)) continue;
+                    ++tried;
+                    int qscore=-qsearch(-raisedBeta,-raisedBeta+1,ply+1);
+                    int score=-INF;
+                    if(!sh.stop.load(std::memory_order_relaxed) && qscore>=raisedBeta)
+                        score=-search(depth-4,-raisedBeta,-raisedBeta+1,ply+1,
+                                      false,false,Move(),false,false);
+                    pos.undo(m,u);
+                    if(sh.stop.load(std::memory_order_relaxed)) return 0;
+                    if(score>=raisedBeta) {
+                        sh.tt.store(pos.hash,m,score,depth-4,B_LOWER,ply);
+                        return score;
+                    }
+                }
+            }
+        }
+
+        // Genuine internal iterative deepening (IID): discover a useful hash move
+        // before the main search when a sufficiently deep PV node has no hash move.
+        if(allowIID && pv && !ttm && !inChk && !excluded && depth>=6) {
+            search(depth-2,-INF,INF,ply,true,false,excluded,false,false);
+            if(sh.stop.load(std::memory_order_relaxed)) return 0;
+            tt=sh.tt.probe(pos.hash,ply);
+            ttm=tt.hit?tt.move:Move();
+            pvLen[ply]=0; // discard the auxiliary PV; the full-depth search rebuilds it.
+        }
+
+        if(depth>=5&&!ttm&&pv)depth--; // internal iterative reduction fallback
         std::vector<Move> mv; pos.pseudo(mv); std::vector<int> sc(mv.size());
         for(size_t i=0;i<mv.size();i++)sc[i]=orderScore(mv[i],ttm,ply,prev);
         int best=-INF,origAlpha=alpha,legal=0,quietCount=0; Move bestMove; Move quiets[64];
@@ -228,7 +301,8 @@ public:
             bool gives=pos.inCheck();
             if(!root&&best>-MATE+MAX_PLY&&quiet&&!gives&&!inChk&&depth<=5&&legal>1&&eval+110+105*depth<=alpha&&!pv){pos.undo(m,u);continue;} // futility
             int newDepth=depth-1, s;
-            if(legal==1) s=-search(newDepth,-beta,-alpha,ply+1,pv,true);
+            if(legal==1) s=-search(newDepth,-beta,-alpha,ply+1,pv,true,
+                                  Move(),allowProbCut,allowIID);
             else {
                 int R=0;
                 if(depth>=3&&legal>=3&&quiet){
@@ -240,9 +314,12 @@ public:
                     R-=std::clamp(history[idx(-pos.side)][m.from()][m.to()]/6000,-2,2);
                     R=std::clamp(R,0,newDepth-1);
                 }
-                s=-search(newDepth-R,-alpha-1,-alpha,ply+1,false,true);
-                if(s>alpha&&R>0)s=-search(newDepth,-alpha-1,-alpha,ply+1,false,true);
-                if(s>alpha&&s<beta&&pv)s=-search(newDepth,-beta,-alpha,ply+1,true,true);
+                s=-search(newDepth-R,-alpha-1,-alpha,ply+1,false,true,
+                           Move(),allowProbCut,allowIID);
+                if(s>alpha&&R>0)s=-search(newDepth,-alpha-1,-alpha,ply+1,false,true,
+                                          Move(),allowProbCut,allowIID);
+                if(s>alpha&&s<beta&&pv)s=-search(newDepth,-beta,-alpha,ply+1,true,true,
+                                                  Move(),allowProbCut,allowIID);
             }
             pos.undo(m,u);
             if(sh.stop.load(std::memory_order_relaxed)){ if(root)aborted=true; return 0; }
@@ -270,7 +347,9 @@ public:
     std::string pvString(){ std::string s; for(auto m:rootPV)s+=m.uci()+" "; if(!s.empty())s.pop_back(); return s; }
     void report(int depth,int score){
         if(!sh.showInfo)return;
-        int64_t t=std::max<int64_t>(1,nowMs()-sh.start); uint64_t n=sh.totalNodes.load()+nodes;
+        int64_t t=std::max<int64_t>(1,nowMs()-sh.start);
+        uint64_t shared=sh.totalNodes.load(std::memory_order_relaxed);
+        uint64_t n=shared+(sh.limits.nodes?(nodes&63ULL):nodes);
         std::ostringstream o; o<<"info depth "<<depth<<" seldepth "<<selDepth<<" multipv 1 score ";
         if(std::abs(score)>=MATE-MAX_PLY)o<<"mate "<<(score>0?(MATE-score+1)/2:-(MATE+score)/2);
         else o<<"cp "<<score;
