@@ -75,10 +75,19 @@ inline int evaluate(const Position& pos) {
                 // any enemy pawn ahead on this file (enemy rank measured from enemy side: ahead means enemy r_e > 7-r... use squares)
                 for(int t=s+fw+df; valid(t); t+=fw) if(pos.b[t]==-col*PAWN){passed=false;break;}
             }
-            if(passed){ static const int pm[8]={0,5,10,20,38,66,110,0}, pe[8]={0,8,16,34,64,110,180,0};
-                mgS[c]+=pm[r]; egS[c]+=pe[r];
-                int kd=std::max(std::abs(fileOf(kingSq[e])-fileOf(s)),std::abs(rankOf(kingSq[e])-rankOf(s+fw)));
-                egS[c]+=kd*r; }
+            if(passed){
+                static const int pm[8]={0,5,10,20,38,66,110,0}, pe[8]={0,8,16,34,64,110,180,0};
+                int blockSq=s+fw;
+                bool blocked=valid(blockSq)&&pos.b[blockSq]!=0;
+                bool enemyCanCatch=std::max(std::abs(fileOf(kingSq[e])-fileOf(s)),
+                                             std::abs(rankOf(kingSq[e])-rankOf(s))) <= r;
+                mgS[c]+=pm[r]-(blocked?8:0);
+                egS[c]+=pe[r]-(blocked?18:0);
+                int kd=std::max(std::abs(fileOf(kingSq[e])-fileOf(s)),
+                                std::abs(rankOf(kingSq[e])-rankOf(s)));
+                egS[c]+=kd*r;
+                if(enemyCanCatch) egS[c]-=std::min(45,r*8);
+            }
             // protected pawn
             if(pawnAtt[c][s]){mgS[c]+=5;egS[c]+=6;}
             continue;
@@ -119,11 +128,14 @@ inline int evaluate(const Position& pos) {
         int n=attackers[c];
         // A king attack only counts when several pieces (incl. the queen) cooperate; a lone queen is not an attack.
         if(n>=2 && queens[c]) {
-            int u=std::min(attackUnits[c],36);
-            int bonus=(u*u)/4 + 3*u; if(n==2) bonus=bonus*2/3;
-            kingMg[c]+=bonus*A/100;
+            int u=std::min(attackUnits[c],28);
+            int bonus=(u*u)/5 + 2*u;
+            if(n==2) bonus=bonus*2/3;
+            // King pressure is useful, but must not falsely compensate for a queen/rook blunder.
+            kingMg[c]+=std::min(180,bonus*A/100);
         } else if(n>=3) {
-            int u=std::min(attackUnits[c],30); kingMg[c]+=((u*u)/6)*A/100;
+            int u=std::min(attackUnits[c],24);
+            kingMg[c]+=std::min(100,((u*u)/8)*A/100);
         }
         // pawn shield for king e
         int sh=0, fw=e==0?16:-16; int kf=fileOf(ks);
@@ -152,7 +164,43 @@ inline int evaluate(const Position& pos) {
     // bishop pair & dead positions
     int mgW=mgS[0]-mgS[1]+kingMg[0]-kingMg[1]+devEdge, egW=egS[0]-egS[1];
     if(bishops[0]>=2){mgW+=28;egW+=48;} if(bishops[1]>=2){mgW-=28;egW-=48;}
-    // pieces defended-ness / hanging heuristic skipped; search handles tactics
+    // Penalize tactically loose pieces modestly. This is positional guidance, not a
+    // substitute for search: pieces attacked by pawns are more urgent than piece attacks.
+    for(int s=0;s<128;s++){
+        if(!valid(s)){s+=7;continue;}
+        int p=pos.b[s]; if(!p||std::abs(p)==KING||std::abs(p)==PAWN) continue;
+        int c=idx(color(p)), e=1-c, pt=std::abs(p);
+        bool attackedByPawn=false, attackedByPiece=false, defended=false;
+        for(int d:{-1,1}){
+            int a=s-color(p)*16+d;
+            if(valid(a)&&pos.b[a]==-color(p)*PAWN) attackedByPawn=true;
+        }
+        // Approximate attack/defence using the same legal-board geometry as the evaluator.
+        // Search remains responsible for exact tactical consequences.
+        for(int a=0;a<128;a++){
+            if(!valid(a)){a+=7;continue;}
+            int ap=pos.b[a]; if(!ap)continue;
+            int ac=color(ap), at=std::abs(ap);
+            bool hit=false;
+            if(at==PAWN) hit=(a+ac*16-1==s)||(a+ac*16+1==s);
+            else if(at==KNIGHT){for(int d:knightSteps)if(a+d==s)hit=true;}
+            else if(at==KING){for(int d:kingSteps)if(a+d==s)hit=true;}
+            else {
+                bool diagonal=false, straight=false;
+                int df=fileOf(s)-fileOf(a), dr=rankOf(s)-rankOf(a);
+                diagonal=std::abs(df)==std::abs(dr)&&df!=0;
+                straight=(df==0) != (dr==0);
+                if((at==BISHOP&&diagonal)||(at==ROOK&&straight)||(at==QUEEN&&(diagonal||straight))){
+                    int step=(dr==0?(df>0?1:-1):(df==0?(dr>0?16:-16):((dr>0?16:-16)+(df>0?1:-1))));
+                    hit=true; for(int t=a+step;t!=s;t+=step)if(!valid(t)||pos.b[t]){hit=false;break;}
+                }
+            }
+            if(hit){if(ac==c)defended=true;else attackedByPiece=true;}
+        }
+        int penalty=value[pt];
+        if(attackedByPawn&&!defended) mgS[c]-=std::min(55,penalty/9);
+        else if(attackedByPiece&&!defended) mgS[c]-=std::min(28,penalty/18);
+    }
     int score=(mgW*phase+egW*(24-phase))/24;
     // simple endgame knowledge
     int w=pos.nonPawnMaterial(WHITE), bl=pos.nonPawnMaterial(BLACK);
