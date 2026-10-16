@@ -280,7 +280,10 @@ public:
     void iterate(int maxDepth) {
         rootSide=pos.side; rootBest=Move(); rootScore=0; int prevScore=0;
         auto legalMoves=pos.legal(); if(legalMoves.empty())return;
-        rootBest=legalMoves[0]; 
+        rootBest=legalMoves[0];
+        Move previousBest;
+        int lastCompletedScore=0;
+        int64_t softLimit=sh.softMs;
         for(int d=1;d<=maxDepth&&!sh.stop;d++){
             if(id>0){ int skip=(id+d)%3==0 && d>4; if(skip) continue; }
             selDepth=0; aborted=false; int delta=d>=5?18:INF, a=d>=5?prevScore-delta:-INF, b=d>=5?prevScore+delta:INF, s;
@@ -294,19 +297,29 @@ public:
             if(aborted&&!pvLen[0])break;
             if(aborted)break;
             if(sh.stop && d>1) break;
+            int previousScore=lastCompletedScore;
             prevScore=s; rootScore=s; rootDepth=d;
             if(pvLen[0]){ rootPV.assign(pvTable[0],pvTable[0]+pvLen[0]); rootBest=rootPV[0]; }
             if(id==0){
                 report(d,s);
-                int64_t el=nowMs()-sh.start;
-                if(!sh.pondering&&!sh.limits.infinite&&sh.softMs>0){
-                    // stability-aware: spend less when the move is obvious (only one legal move)
-                    int64_t soft=sh.softMs; if(legalMoves.size()==1)soft=std::min<int64_t>(soft,30);
-                    if(el>=soft*6/10 && d>=6){sh.stop=true;}
-                    if(el>=soft && d>=1) sh.stop=true;
+                int64_t elapsed=nowMs()-sh.start;
+                int swing=d>1?std::abs(s-previousScore):0;
+                bool bestChanged=previousBest && rootBest && rootBest!=previousBest;
+                bool critical=pos.inCheck() || swing>=100 || (bestChanged&&swing>=35)
+                              || (rootBest&&rootBest.tactical()&&swing>=50);
+                // Extend the target in unstable/tactical positions, but never exceed hardMs.
+                if(critical && softLimit>0 && sh.hardMs>softLimit){
+                    int64_t extension=std::max<int64_t>(softLimit/2,200);
+                    softLimit=std::min(sh.hardMs,softLimit+extension);
                 }
-                if(sh.limits.depth&&d>=sh.limits.depth&&!sh.limits.infinite&&!sh.pondering){ sh.stop=true; }
+                if(!sh.pondering&&!sh.limits.infinite&&softLimit>0&&elapsed>=softLimit) sh.stop=true;
+                if(sh.limits.depth&&d>=sh.limits.depth&&!sh.limits.infinite&&!sh.pondering) sh.stop=true;
                 if(std::abs(s)>=MATE-MAX_PLY && d>=MATE-std::abs(s)+2 && !sh.pondering && !sh.limits.infinite) sh.stop=true;
+                previousBest=rootBest;
+                lastCompletedScore=s;
+            } else {
+                lastCompletedScore=s;
+                previousBest=rootBest;
             }
         }
     }

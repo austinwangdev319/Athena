@@ -52,19 +52,34 @@ struct Engine {
         sh.start=nowMs();
         int us=idx(pos.side); int64_t t=L.time[us], inc=L.inc[us]; int oh=sh.moveOverhead;
         sh.softMs=0; sh.hardMs=0;
-        if(L.movetime>0) { sh.softMs=sh.hardMs=std::max<int64_t>(1,L.movetime-oh); }
-        else if(t>0 || inc>0) {
-            int mtg=L.movestogo>0?std::min(L.movestogo,50):std::max(22,40-pos.fullmove/3);
+        if(L.movetime>0) {
+            sh.softMs=sh.hardMs=std::max<int64_t>(1,L.movetime-oh);
+        } else if(t>0 || inc>0) {
+            // Estimate remaining moves, then adjust the budget for the material phase.
+            int mtg=L.movestogo>0 ? std::min(L.movestogo,50) : std::clamp(38-pos.fullmove/4,18,38);
             int64_t avail=std::max<int64_t>(1,t-oh*2);
-            int64_t base=avail/mtg + inc*3/4;
-            // Practical targets: bullet <1s, blitz ~2-3s, longer games ~5s.
-            // Remaining clock time always caps these targets.
-            int64_t softCap = t<=90000 ? 650 : (t<=360000 ? 2500 : 5000);
-            int64_t hardCap = t<=90000 ? 900 : (t<=360000 ? 3000 : 6500);
-            sh.softMs=std::min({base*timeUse/100,avail*18/100,softCap});
-            sh.hardMs=std::min({base*150*timeUse/10000,avail*25/100,hardCap});
-            sh.hardMs=std::max<int64_t>(sh.hardMs,5);
+            int64_t base=avail/mtg + inc*4/5;
+            int phase=0;
+            for(int sq=0;sq<128;sq++) {
+                if(!valid(sq)){sq+=7;continue;}
+                switch(std::abs(pos.b[sq])) {
+                    case KNIGHT: case BISHOP: phase+=1; break;
+                    case ROOK: phase+=2; break;
+                    case QUEEN: phase+=4; break;
+                    default: break;
+                }
+            }
+            phase=std::min(24,phase);
+            int phasePercent=phase<=6 ? 130 : (phase<=12 ? 115 : (phase>=20 ? 95 : 105));
+            base=base*phasePercent/100;
+            // Short clocks remain conservative. Blitz and rapid get more headroom
+            // for deep tactical analysis and accurate endgame conversion.
+            int64_t softCap=t<=15000 ? 250 : (t<=90000 ? 900 : (t<=360000 ? 4000 : 8000));
+            int64_t hardCap=t<=15000 ? 400 : (t<=90000 ? 1800 : (t<=360000 ? 9000 : 18000));
+            sh.softMs=std::min({base*timeUse/100,avail*14/100,softCap});
+            sh.hardMs=std::min({base*250*timeUse/10000,avail*22/100,hardCap});
             sh.softMs=std::max<int64_t>(sh.softMs,2);
+            sh.hardMs=std::max<int64_t>(sh.hardMs,sh.softMs);
             if(sh.softMs>sh.hardMs) sh.softMs=sh.hardMs;
         }
         searching=true; sh.tt.newSearch();

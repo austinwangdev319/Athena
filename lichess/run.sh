@@ -48,10 +48,35 @@ else
   BOT_PYTHON="python3"
 fi
 
+# Fail before connecting if the configuration is malformed.
+ATHENA_CONFIG="$BOT_DIR/config.yml" "$BOT_PYTHON" -c \
+  'import os, yaml; yaml.safe_load(open(os.environ["ATHENA_CONFIG"], encoding="utf-8")); print("Verified Lichess bot YAML configuration")'
+
 echo "Starting Athena through lichess-bot from $BOT_DIR"
 mkdir -p "$BOT_DIR/game_records"
-if command -v python3 >/dev/null 2>&1; then
-  "$BOT_PYTHON" "$ATHENA_ROOT/tools/learn_from_games.py" --watch --directory "$BOT_DIR/game_records" --username "${ATHENA_LICHESS_USERNAME:-AAthena101}" --output "$BOT_DIR/engines/athena_style.txt" &
-fi
+
+LEARNER_PID=""
+MATCHMAKER_PID=""
+cleanup() {
+  if [[ -n "$LEARNER_PID" ]]; then kill "$LEARNER_PID" 2>/dev/null || true; fi
+  if [[ -n "$MATCHMAKER_PID" ]]; then kill "$MATCHMAKER_PID" 2>/dev/null || true; fi
+  if [[ -n "$LEARNER_PID" ]]; then wait "$LEARNER_PID" 2>/dev/null || true; fi
+  if [[ -n "$MATCHMAKER_PID" ]]; then wait "$MATCHMAKER_PID" 2>/dev/null || true; fi
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+"$BOT_PYTHON" "$ATHENA_ROOT/tools/learn_from_games.py" \
+  --watch --directory "$BOT_DIR/game_records" \
+  --username "${ATHENA_LICHESS_USERNAME:-AAthena101}" \
+  --output "$BOT_DIR/engines/athena_style.txt" &
+LEARNER_PID=$!
+
+"$BOT_PYTHON" "$ATHENA_ROOT/tools/matchmaking.py" \
+  --username "${ATHENA_LICHESS_USERNAME:-AAthena101}" \
+  --state "$BOT_DIR/game_records/athena_matchmaking_state.json" &
+MATCHMAKER_PID=$!
+
 cd "$BOT_DIR"
-exec "$BOT_PYTHON" lichess-bot.py
+"$BOT_PYTHON" lichess-bot.py
