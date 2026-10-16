@@ -47,8 +47,8 @@ correspondence:
 
 challenge:
   concurrency: 3
-  games_reserved_for_humans: 1
-  sort_by: "best"
+  games_reserved_for_humans: 0
+  sort_by: "first"
   preference: "bot"
   accept_bot: true
   only_bot: false
@@ -62,7 +62,6 @@ challenge:
     - blitz
     - rapid
     - bullet
-  # Keep games casual by default while testing the bot integration.
   modes:
     - casual
     - rated
@@ -78,20 +77,19 @@ pgn_directory: "game_records"
 pgn_file_grouping: "game"
 
 matchmaking:
-  # Automatically challenge other Lichess bots when idle.
-  # Lichess currently limits bot-vs-bot games to 100 per day.
+  # Actively challenge other Lichess bots when idle.
+  # Lichess limits bot-vs-bot games to 100 per day.
   allow_matchmaking: true
   allow_during_games: true
   challenge_variant: "standard"
-  challenge_timeout: 5
+  challenge_timeout: 1
   challenge_initial_time:
-    - 60
     - 180
     - 300
   challenge_increment:
-    - 1
+    - 0
     - 2
-  opponent_rating_difference: 300
+  opponent_rating_difference: 800
   rating_preference: "none"
-  challenge_mode: "rated"
-  challenge_filter: "coarse"
+  challenge_mode: "random"
+  challenge_filter: "fine"

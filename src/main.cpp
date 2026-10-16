@@ -71,7 +71,6 @@ struct Engine {
         searcher=std::thread([this,L]{ runSearch(L); });
     }
     void runSearch(Limits L) {
-        // Opening book (never while pondering, analysing, or with restricted moves).
         if(ownBook && !L.infinite && L.searchmoves.empty() && !L.ponder && !L.depth && !L.nodes) {
             auto bm=bookMove(pos,book,bookDepth,gambitRisk,rng);
             if(bm) { std::cout<<"info string book move"<<std::endl; std::cout<<"bestmove "<<bm.uci()<<std::endl; searching=false; return; }
@@ -81,22 +80,17 @@ struct Engine {
         std::vector<std::thread> helpers;
         for(int i=1;i<threadCount;i++) helpers.emplace_back([this,i]{ workers[i]->iterate(MAX_PLY-4); });
         workers[0]->iterate(L.depth?L.depth:MAX_PLY-4);
-        // In infinite/ponder mode, UCI requires waiting for stop/ponderhit before replying.
         while(!sh.stop && (sh.pondering||L.infinite)) std::this_thread::sleep_for(std::chrono::milliseconds(1));
         sh.stop=true; for(auto& h:helpers) h.join();
-        Worker& w=*workers[0]; Move best=w.rootBest; 
-        // pick the deepest completed helper only if it found a strictly deeper result
+        Worker& w=*workers[0]; Move best=w.rootBest;
         for(auto& wk:workers) if(wk->rootDepth>w.rootDepth+1 && wk->rootBest) best=wk->rootBest;
         std::vector<Move> pv=w.rootPV; std::string out="bestmove "+(best?best.uci():std::string("0000"));
         if(best && pv.size()>1 && pv[0]==best) out+=" ponder "+pv[1].uci();
         std::cout<<out<<std::endl; searching=false;
     }
-    void ponderhit() {
-        // Ponder hit: the clock starts now.
-        sh.start=nowMs(); sh.pondering=false;
-    }
+    void ponderhit() { sh.start=nowMs(); sh.pondering=false; }
     void setOption(std::istringstream& in) {
-        std::string tok, name, val; in>>tok; while(in>>tok && tok!="value") name+=(name.empty()?"":" ")+tok; 
+        std::string tok, name, val; in>>tok; while(in>>tok && tok!="value") name+=(name.empty()?"":" ")+tok;
         std::getline(in,val); while(!val.empty()&&val[0]==' ') val.erase(0,1);
         stopSearch();
         auto toBool=[&]{ return val=="true"; };
@@ -123,7 +117,9 @@ int main(int argc,char** argv) {
     Engine e; std::string line;
     if(argc>1 && std::string(argv[1])=="bench") {
         e.sh.showInfo=false; uint64_t total=0; int64_t t0=nowMs();
-        const char* fens[]={Position::startFen().c_str(),"r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+        // Keep the start FEN string alive for the lifetime of the pointer array.
+        const std::string startFen=Position::startFen();
+        const char* fens[]={startFen.c_str(),"r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
             "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1","r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10"};
         for(auto f:fens){ e.pos.setFen(f); e.sh.stop=false; e.sh.limits=Limits(); e.sh.limits.depth=12; e.sh.start=nowMs(); e.sh.totalNodes=0;
             Worker w(e.sh,0); w.pos=e.pos; w.iterate(12); total+=w.nodes; }

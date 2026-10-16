@@ -15,13 +15,12 @@
 
 namespace ag {
 struct BookLine { int weight; int deficit; int side; std::string moves; };
-struct BookEntry { int weight, deficit, side; std::vector<Move> moves; };   // deficit = worst engine-verified eval (cp) for the gambiteer
+struct BookEntry { int weight, deficit, side; std::vector<Move> moves; };
 
 inline const BookLine BUILTIN_BOOK[] = {
 #include "gambits.inc"
 };
 
-// Parse and legality-check a line; returns false (and skips it) if any move is illegal.
 inline bool makeEntry(int weight,int deficit,int side,const std::string& moves,BookEntry& out) {
     Position p; p.setFen(Position::startFen()); std::istringstream in(moves); std::string s;
     out.weight=weight; out.deficit=deficit; out.side=side; out.moves.clear();
@@ -31,7 +30,6 @@ inline bool makeEntry(int weight,int deficit,int side,const std::string& moves,B
 inline std::vector<BookEntry> builtinBook() {
     std::vector<BookEntry> v; for(const auto& l:BUILTIN_BOOK){ BookEntry e; if(makeEntry(l.weight,l.deficit,l.side,l.moves,e)) v.push_back(e);} return v;
 }
-// Returns number of lines loaded; -1 if the file cannot be opened.
 inline int loadBookFile(const std::string& path,std::vector<BookEntry>& book,int* skipped=nullptr) {
     std::ifstream f(path); if(!f) return -1; std::string line; int ok=0,bad=0;
     while(std::getline(f,line)) {
@@ -52,16 +50,19 @@ template<class Rng>
 Move bookMove(const Position& cur,const std::vector<BookEntry>& book,int maxPly,int maxDeficit,Rng& rng) {
     Position start; start.setFen(Position::startFen());
     const auto& hist=cur.history;
-    if(hist.empty()||hist[0]!=start.hash) return Move();          // game did not begin from the standard position
+    if(hist.empty()||hist[0]!=start.hash) return Move();
     int played=int(hist.size())-1; if(played>=maxPly) return Move();
     // Athena's signature: always open 1.e4, and answer the Sicilian with the Wing Gambit.
+    // parseMove() generates legal moves on a mutable Position, so use a local copy here.
     if(cur.side==WHITE && played==0) {
-        Move e4=cur.parseMove("e2e4"); if(e4) return e4;
+        Position legalPosition=cur;
+        Move e4=legalPosition.parseMove("e2e4"); if(e4) return e4;
     }
     if(cur.side==WHITE && played==2 &&
        cur.b[parseSquare("e4")]==WHITE*PAWN &&
        cur.b[parseSquare("c5")]==BLACK*PAWN) {
-        Move wing=cur.parseMove("b2b4"); if(wing) return wing;
+        Position legalPosition=cur;
+        Move wing=legalPosition.parseMove("b2b4"); if(wing) return wing;
     }
     std::vector<std::pair<Move,int>> cands;
     for(const auto& line:book) {
