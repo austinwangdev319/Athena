@@ -1,6 +1,14 @@
+import ssl
 import unittest
+from unittest.mock import patch
+from urllib.error import URLError
 
-from tools.matchmaking import eligible_opponents, game_category, active_game_against
+from tools.matchmaking import (
+    LichessAPI,
+    eligible_opponents,
+    game_category,
+    active_game_against,
+)
 
 
 def user(name, rating, games=20):
@@ -49,6 +57,19 @@ class MatchmakingTests(unittest.TestCase):
         games = [{"opponent": {"username": "BoTPlayer"}}]
         self.assertTrue(active_game_against(games, "botplayer"))
         self.assertFalse(active_game_against(games, "other"))
+
+    def test_ssl_context_verifies_certificates_and_hostnames(self):
+        client = LichessAPI("test-token", "AAthena101")
+        self.assertEqual(client.ssl_context.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(client.ssl_context.check_hostname)
+        self.assertTrue(client.ssl_context.get_ca_certs())
+
+    def test_certificate_error_has_actionable_message(self):
+        client = LichessAPI("test-token", "AAthena101")
+        reason = ssl.SSLCertVerificationError(1, "CERTIFICATE_VERIFY_FAILED")
+        with patch("tools.matchmaking.urlopen", side_effect=URLError(reason)):
+            with self.assertRaisesRegex(RuntimeError, "TLS certificate verification failed"):
+                client.request("GET", "/api/account")
 
 
 if __name__ == "__main__":
