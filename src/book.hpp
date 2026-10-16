@@ -19,6 +19,7 @@ struct BookEntry { int weight, deficit, side; std::vector<Move> moves; };
 
 inline const BookLine BUILTIN_BOOK[] = {
 #include "gambits.inc"
+#include "standard_book.inc"
 };
 
 inline bool makeEntry(int weight,int deficit,int side,const std::string& moves,BookEntry& out) {
@@ -52,12 +53,7 @@ Move bookMove(const Position& cur,const std::vector<BookEntry>& book,int maxPly,
     const auto& hist=cur.history;
     if(hist.empty()||hist[0]!=start.hash) return Move();
     int played=int(hist.size())-1; if(played>=maxPly) return Move();
-    // Athena's signature: always open 1.e4, and answer the Sicilian with the Wing Gambit.
-    // parseMove() generates legal moves on a mutable Position, so use a local copy here.
-    if(cur.side==WHITE && played==0) {
-        Position legalPosition=cur;
-        Move e4=legalPosition.parseMove("e2e4"); if(e4) return e4;
-    }
+    // Against 1.e4 c5, keep Athena's signature Wing Gambit to seize central tempo.
     if(cur.side==WHITE && played==2 &&
        cur.b[parseSquare("e4")]==WHITE*PAWN &&
        cur.b[parseSquare("c5")]==BLACK*PAWN) {
