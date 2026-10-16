@@ -67,9 +67,14 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-"$BOT_PYTHON" "$ATHENA_ROOT/tools/learn_from_games.py" \
+"$BOT_PYTHON" "$ATHENA_ROOT/tools/review_games.py" \
   --watch --directory "$BOT_DIR/game_records" \
   --username "${ATHENA_LICHESS_USERNAME:-AAthena101}" \
+  --engine "$ATHENA_ROOT/athena" \
+  --nodes 8000 --max-positions 10 --interval 300 \
+  --state "$BOT_DIR/game_records/athena_review_state.json" \
+  --activity-state "$BOT_DIR/game_records/athena_matchmaking_state.json" \
+  --report "$BOT_DIR/game_records/athena_review_report.json" \
   --output "$BOT_DIR/engines/athena_style.txt" &
 LEARNER_PID=$!
 
