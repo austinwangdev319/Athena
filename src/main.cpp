@@ -123,7 +123,8 @@ int main(int argc,char** argv) {
     Engine e; std::string line;
     if(argc>1 && std::string(argv[1])=="bench") {
         e.sh.showInfo=false; uint64_t total=0; int64_t t0=nowMs();
-        const char* fens[]={Position::startFen().c_str(),"r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+        const std::string startFen=Position::startFen();
+        const char* fens[]={startFen.c_str(),"r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
             "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1","r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10"};
         for(auto f:fens){ e.pos.setFen(f); e.sh.stop=false; e.sh.limits=Limits(); e.sh.limits.depth=12; e.sh.start=nowMs(); e.sh.totalNodes=0;
             Worker w(e.sh,0); w.pos=e.pos; w.iterate(12); total+=w.nodes; }
