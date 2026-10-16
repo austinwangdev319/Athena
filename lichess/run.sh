@@ -4,7 +4,7 @@ set -euo pipefail
 ATHENA_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BOT_DIR="${LICHESS_BOT_DIR:-"$ATHENA_ROOT/../lichess-bot"}"
 
-if [[ -z "${LICHESS_BOT_TOKEN:-" ]]; then
+if [[ -z "${LICHESS_BOT_TOKEN:-}" ]]; then
   echo "ERROR: Set LICHESS_BOT_TOKEN to a fresh Lichess bot:play token." >&2
   exit 2
 fi
@@ -38,8 +38,8 @@ echo "Verified engine binary copied to $BOT_DIR/engines/athena"
 # overrides this harmless placeholder. No token is written into the config.
 cp "$ATHENA_ROOT/lichess/config.yml" "$BOT_DIR/config.yml"
 
-if [[ -n "${LICHESS_BOT_PYTHON:-" ]]; then
-  BOT_PYTHON="${LICHESS_BOT_PYTHON"
+if [[ -n "${LICHESS_BOT_PYTHON:-}" ]]; then
+  BOT_PYTHON="$LICHESS_BOT_PYTHON"
 elif [[ -x "$BOT_DIR/.venv/bin/python" ]]; then
   BOT_PYTHON="$BOT_DIR/.venv/bin/python"
 elif [[ -x "$BOT_DIR/venv/bin/python" ]]; then
