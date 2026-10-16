@@ -27,6 +27,13 @@ make -C "$ATHENA_ROOT" athena ARCH=
 mkdir -p "$BOT_DIR/engines"
 cp "$ATHENA_ROOT/athena" "$BOT_DIR/engines/athena"
 
+# Fail early if the deployed engine differs from the binary just built.
+if ! cmp -s "$ATHENA_ROOT/athena" "$BOT_DIR/engines/athena"; then
+  echo "ERROR: The copied Athena engine does not match the build output." >&2
+  exit 3
+fi
+echo "Verified engine binary copied to $BOT_DIR/engines/athena"
+
 # The official runner reads LICHESS_BOT_TOKEN from the environment and
 # overrides this harmless placeholder. No token is written into the config.
 cp "$ATHENA_ROOT/lichess/config.yml" "$BOT_DIR/config.yml"
