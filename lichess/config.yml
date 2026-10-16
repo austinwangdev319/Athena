@@ -23,18 +23,19 @@ engine:
     online_egtb:
       enabled: false
   uci_options:
-    Move Overhead: 150
+    Move Overhead: 80
     Threads: 1
     Hash: 256
     OwnBook: true
-    GambitRisk: 60
-    Aggression: 80
+    TimeUse: 80
+    GambitRisk: 100
+    Aggression: 165
     Contempt: 25
 
 abort_time: 30
 fake_think_time: false
 rate_limiting_delay: 0
-move_overhead: 2000
+move_overhead: 150
 max_takebacks_accepted: 0
 quit_after_all_games_finish: false
 
@@ -45,8 +46,8 @@ correspondence:
   ponder: false
 
 challenge:
-  concurrency: 1
-  games_reserved_for_humans: 0
+  concurrency: 3
+  games_reserved_for_humans: 1
   sort_by: "best"
   preference: "bot"
   accept_bot: true
@@ -64,26 +65,33 @@ challenge:
   # Keep games casual by default while testing the bot integration.
   modes:
     - casual
+    - rated
   max_simultaneous_games_per_user: 2
 
 greeting:
-  hello: "Hi, I'm Athena, an original gambit-playing engine by Austin Wang. Good luck."
+  hello: "Hi! I'm Athena, built by Austin, a GothamChess enjoyer and certified gambit enthusiast. I may not be perfect, but I will make your king work for it. Good luck!"
   goodbye: "Good game."
-  hello_spectators: "Athena here. Source: see my profile."
+  hello_spectators: "Fun fact: Judit Polgar beat several world champions. Athena's plan: make your king nervous."
   goodbye_spectators: "Thanks for watching."
+
+pgn_directory: "game_records"
+pgn_file_grouping: "game"
 
 matchmaking:
   # Automatically challenge other Lichess bots when idle.
   # Lichess currently limits bot-vs-bot games to 100 per day.
   allow_matchmaking: true
-  allow_during_games: false
+  allow_during_games: true
   challenge_variant: "standard"
   challenge_timeout: 5
   challenge_initial_time:
+    - 60
     - 180
+    - 300
   challenge_increment:
+    - 1
     - 2
   opponent_rating_difference: 300
   rating_preference: "none"
-  challenge_mode: "casual"
+  challenge_mode: "rated"
   challenge_filter: "coarse"

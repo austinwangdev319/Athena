@@ -42,5 +42,9 @@ else
 fi
 
 echo "Starting Athena through lichess-bot from $BOT_DIR"
+mkdir -p "$BOT_DIR/game_records"
+if command -v python3 >/dev/null 2>&1; then
+  "$BOT_PYTHON" "$ATHENA_ROOT/tools/learn_from_games.py" --watch --directory "$BOT_DIR/game_records" --username "${ATHENA_LICHESS_USERNAME:-AAthena101}" --output "$BOT_DIR/engines/athena_style.txt" &
+fi
 cd "$BOT_DIR"
 exec "$BOT_PYTHON" lichess-bot.py
