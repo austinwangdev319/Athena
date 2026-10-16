@@ -1,0 +1,86 @@
+# lichess-bot configuration for Athena, tuned for 3+2 blitz.
+# The token is read from the LICHESS_BOT_TOKEN environment variable. Never put a real token in this file.
+token: "set-via-LICHESS_BOT_TOKEN-env-var"   # overridden by the LICHESS_BOT_TOKEN environment variable
+url: "https://lichess.org/"
+
+engine:
+  dir: "./engines/"            # put the athena binary here (athena or athena.exe)
+  name: "athena"               # on Windows use "athena.exe"
+  working_dir: "./engines/"    # relative to the lichess-bot folder
+  protocol: "uci"
+  ponder: false                # set true if the machine has 4+ cores to spare
+  polyglot:
+    enabled: false             # Athena uses its own built-in gambit book
+  draw_or_resign:
+    resign_enabled: false
+    offer_draw_enabled: false  # Athena plays on; it is built to avoid early draws
+  online_moves:
+    lichess_opening_explorer:
+      enabled: false
+    lichess_cloud_analysis:
+      enabled: false
+    online_egtb:
+      enabled: false
+  uci_options:
+    Move Overhead: 150         # network lag margin for lichess; raise to 250 if you flag
+    Threads: 1                  # raise to your core count minus one
+    Hash: 256
+    OwnBook: true
+    GambitRisk: 60             # 0 = sound lines only, 110 = Blackmar-Diemer / King's Gambit / Dragon become available
+    Aggression: 80
+    Contempt: 25
+
+abort_time: 30
+fake_think_time: false
+rate_limiting_delay: 0
+move_overhead: 2000
+max_takebacks_accepted: 0
+quit_after_all_games_finish: false
+
+correspondence:
+  move_time: 60
+  checkin_period: 300
+  disconnect_time: 150
+  ponder: false
+
+challenge:
+  concurrency: 1
+  games_reserved_for_humans: 0
+  sort_by: "best"
+  preference: "human"          # take human challenges before bot challenges
+  accept_bot: true
+  only_bot: false
+  max_increment: 20
+  min_increment: 0
+  max_base: 1800
+  min_base: 15
+  variants:
+    - standard
+  time_controls:
+    - blitz
+    - rapid
+    - bullet
+  modes:
+    - casual
+    - rated
+  max_simultaneous_games_per_user: 2
+
+greeting:
+  hello: "Hi, I'm Athena, an original gambit-playing engine by Austin Wang. Good luck."
+  goodbye: "Good game."
+  hello_spectators: "Athena here. Source: see my profile."
+  goodbye_spectators: "Thanks for watching."
+
+matchmaking:
+  allow_matchmaking: false     # set true to have Athena challenge other bots at 3+2 when idle
+  allow_during_games: false
+  challenge_variant: "standard"
+  challenge_timeout: 20
+  challenge_initial_time:
+    - 180
+  challenge_increment:
+    - 2
+  opponent_rating_difference: 300
+  rating_preference: "none"
+  challenge_mode: "casual"     # keep casual until you have read Lichess's bot rules for rated play
+  challenge_filter: none

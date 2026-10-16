@@ -1,0 +1,9 @@
+athena
+athena.exe
+athena-*
+athena-debug*
+perft_test*
+__pycache__/
+*.pgn
+config.local.yml
+.env

@@ -1,0 +1,24 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Athena (UCI, type commands in terminal)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/athena-debug",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "externalConsole": false,
+      "MIMode": "gdb",
+      "preLaunchTask": "Build Athena (debug)",
+      "windows": {
+        "program": "${workspaceFolder}/athena-debug.exe",
+        "miDebuggerPath": "gdb.exe"
+      },
+      "osx": { "MIMode": "lldb" },
+      "setupCommands": [
+        { "description": "Pretty printing", "text": "-enable-pretty-printing", "ignoreFailures": true }
+      ]
+    }
+  ]
+}

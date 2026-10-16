@@ -1,0 +1,51 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build Athena (release)",
+      "type": "shell",
+      "command": "g++",
+      "args": ["-O3", "-std=c++17", "-pthread", "-DNDEBUG", "-march=x86-64-v2", "-o", "${workspaceFolder}/athena", "${workspaceFolder}/src/main.cpp"],
+      "windows": {
+        "args": ["-O3", "-std=c++17", "-pthread", "-DNDEBUG", "-march=x86-64-v2", "-static", "-o", "${workspaceFolder}/athena.exe", "${workspaceFolder}/src/main.cpp"]
+      },
+      "osx": {
+        "command": "clang++",
+        "args": ["-O3", "-std=c++17", "-pthread", "-DNDEBUG", "-o", "${workspaceFolder}/athena", "${workspaceFolder}/src/main.cpp"]
+      },
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "Build Athena (debug)",
+      "type": "shell",
+      "command": "g++",
+      "args": ["-O0", "-g", "-std=c++17", "-pthread", "-o", "${workspaceFolder}/athena-debug", "${workspaceFolder}/src/main.cpp"],
+      "windows": {
+        "args": ["-O0", "-g", "-std=c++17", "-pthread", "-o", "${workspaceFolder}/athena-debug.exe", "${workspaceFolder}/src/main.cpp"]
+      },
+      "osx": {
+        "command": "clang++",
+        "args": ["-O0", "-g", "-std=c++17", "-pthread", "-o", "${workspaceFolder}/athena-debug", "${workspaceFolder}/src/main.cpp"]
+      },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "Run perft tests",
+      "type": "shell",
+      "command": "g++ -O2 -std=c++17 -o ${workspaceFolder}/perft_test ${workspaceFolder}/tests/perft.cpp && ${workspaceFolder}/perft_test",
+      "windows": {
+        "command": "g++ -O2 -std=c++17 -o ${workspaceFolder}/perft_test.exe ${workspaceFolder}/tests/perft.cpp; & ${workspaceFolder}/perft_test.exe"
+      },
+      "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "Benchmark",
+      "type": "shell",
+      "command": "${workspaceFolder}/athena bench",
+      "windows": { "command": "${workspaceFolder}/athena.exe bench" },
+      "dependsOn": "Build Athena (release)",
+      "problemMatcher": []
+    }
+  ]
+}
