@@ -52,7 +52,8 @@ challenge:
   preference: "bot"
   accept_bot: true
   only_bot: false
-  max_increment: 20
+  # Zero increment only; elapsed thinking time is never replenished.
+  max_increment: 0
   min_increment: 0
   max_base: 1800
   min_base: 15
@@ -89,7 +90,6 @@ matchmaking:
     - 300
   challenge_increment:
     - 0
-    - 2
   opponent_rating_difference: 150
   rating_preference: "high"
   challenge_mode: "rated"
