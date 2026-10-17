@@ -27,9 +27,10 @@ CLOSE_RATING = 150
 MAX_ACCEPTED_GAMES_PER_UTC_DAY = 80  # Leave room below Lichess's daily bot-vs-bot cap for inbound games.
 CHALLENGE_COOLDOWN_SECONDS = 65
 RECENT_TARGET_SECONDS = 6 * 60 * 60
+# Zero increment only: thinking time must come entirely from the clock.
 CONTROL_CHOICES = {
-    "blitz": [(180, 0), (300, 2)],
-    "rapid": [(600, 0), (600, 2)],
+    "blitz": [(180, 0), (300, 0)],
+    "rapid": [(600, 0)],
 }
 
 
