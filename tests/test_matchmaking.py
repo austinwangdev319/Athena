@@ -55,6 +55,8 @@ class MatchmakingTests(unittest.TestCase):
         controls = [clock for clocks in CONTROL_CHOICES.values() for clock in clocks]
         self.assertTrue(controls)
         self.assertTrue(all(increment == 0 for _, increment in controls))
+        for category, clocks in CONTROL_CHOICES.items():
+            self.assertTrue(all(game_category(base, inc) == category for base, inc in clocks))
 
     def test_config_rejects_incremented_incoming_challenges(self):
         config = Path(__file__).resolve().parents[1] / "lichess" / "config.yml"
