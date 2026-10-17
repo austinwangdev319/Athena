@@ -94,6 +94,7 @@ struct SearchShared {
     TT tt; std::atomic<bool> stop{false}, pondering{false}; Limits limits;
     int64_t start=0, softMs=0, hardMs=0; std::atomic<uint64_t> totalNodes{0};
     int threads=1; int moveOverhead=60; bool showInfo=true;
+    bool clockAdvantageDeepening=false;
 };
 
 class Worker {
@@ -341,7 +342,8 @@ public:
                 // Incremented clocks may extend the target for unstable/tactical positions.
                 // With zero increment, longer thinking has no time reward and never gets an extension.
                 int clockSide = rootSide==WHITE ? 0 : 1;
-                bool noIncrement = sh.limits.time[clockSide] > 0 && sh.limits.inc[clockSide] == 0;
+                bool noIncrement = sh.limits.time[clockSide] > 0 && sh.limits.inc[clockSide] == 0
+                                  && !sh.clockAdvantageDeepening;
                 if(!noIncrement && critical && softLimit>0 && sh.hardMs>softLimit){
                     int64_t extension=std::max<int64_t>(softLimit/2,200);
                     softLimit=std::min(sh.hardMs,softLimit+extension);
