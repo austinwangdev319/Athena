@@ -78,6 +78,12 @@ struct Engine {
             int64_t hardCap=t<=15000 ? 400 : (t<=90000 ? 1800 : (t<=360000 ? 9000 : 18000));
             sh.softMs=std::min({base*timeUse/100,avail*14/100,softCap});
             sh.hardMs=std::min({base*250*timeUse/10000,avail*22/100,hardCap});
+            // No increment means thinking time cannot be replenished.
+            // Keep a 25% reserve by tightening both search budgets.
+            if(inc==0) {
+                sh.softMs=sh.softMs*3/4;
+                sh.hardMs=sh.hardMs*3/4;
+            }
             sh.softMs=std::max<int64_t>(sh.softMs,2);
             sh.hardMs=std::max<int64_t>(sh.hardMs,sh.softMs);
             if(sh.softMs>sh.hardMs) sh.softMs=sh.hardMs;
