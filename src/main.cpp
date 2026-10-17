@@ -55,10 +55,14 @@ struct Engine {
         if(L.movetime>0) {
             sh.softMs=sh.hardMs=std::max<int64_t>(1,L.movetime-oh);
         } else if(t>0 || inc>0) {
-            // Estimate remaining moves, then adjust the budget for the material phase.
-            int mtg=L.movestogo>0 ? std::min(L.movestogo,50) : std::clamp(38-pos.fullmove/4,18,38);
-            int64_t avail=std::max<int64_t>(1,t-oh*2);
-            int64_t base=avail/mtg + inc*4/5;
+            // Dynamic sudden-death time management.
+            // Reserve clock time first, then allocate from an estimate of remaining moves.
+            int mtg=L.movestogo>0 ? std::min(L.movestogo,50)
+                                  : std::clamp(38-pos.fullmove/4,18,38);
+            int64_t reserve=std::max<int64_t>(1500,std::min<int64_t>(10000,t/20));
+            int64_t usable=std::max<int64_t>(1,t-2LL*oh-reserve);
+            int64_t base=std::max<int64_t>(1,usable/mtg) + inc*4/5;
+
             int phase=0;
             for(int sq=0;sq<128;sq++) {
                 if(!valid(sq)){sq+=7;continue;}
@@ -72,25 +76,34 @@ struct Engine {
             phase=std::min(24,phase);
             int phasePercent=phase<=6 ? 130 : (phase<=12 ? 115 : (phase>=20 ? 95 : 105));
             base=base*phasePercent/100;
-            // Short clocks remain conservative. Blitz and rapid get more headroom
-            // for deep tactical analysis and accurate endgame conversion.
-            int64_t softCap=t<=15000 ? 250 : (t<=90000 ? 900 : (t<=360000 ? 4000 : 8000));
-            int64_t hardCap=t<=15000 ? 400 : (t<=90000 ? 1800 : (t<=360000 ? 9000 : 18000));
-            sh.softMs=std::min({base*timeUse/100,avail*14/100,softCap});
-            sh.hardMs=std::min({base*250*timeUse/10000,avail*22/100,hardCap});
 
-            // In a zero-increment game, spend more time only when:
-            // (1) the opponent has <=60s, (2) we have >=1.5x their time,
-            // and (3) our static evaluation is already favorable by >=1 pawn.
             int64_t opponentTime=L.time[1-us];
-            bool clockEdge=opponentTime>0 && opponentTime<=60000
+            bool clockEdge=inc==0 && opponentTime>0 && opponentTime<=60000
                            && t>=opponentTime*3/2 && evaluate(pos)>=100;
-            if(clockEdge) {
-                sh.clockAdvantageDeepening=true;
-                sh.softMs=std::min({base*timeUse*135/10000,avail*20/100,softCap*2});
-                sh.hardMs=std::min({base*375*timeUse/10000,avail*30/100,hardCap*2});
-            } else if(inc==0) {
-                // Normally reserve time on +0 clocks; clock-edge mode is a bounded exception.
+            sh.clockAdvantageDeepening=clockEdge;
+
+            // Max-think equation:
+            // B = (our clock - overhead - reserve) / estimated moves remaining.
+            // Normal hard budget ~= 2.0*B; clock-edge budget ~= 3.2*B.
+            // The dynamic percentage cap scales with the usable clock, not total game time.
+            int softFactor=clockEdge ? 150 : 100;
+            int hardFactor=clockEdge ? 400 : 250;
+            int64_t softCap=usable*(clockEdge ? 12 : 8)/100;
+            int64_t hardCap=usable*(clockEdge ? 25 : 15)/100;
+            sh.softMs=std::min(base*timeUse*softFactor/10000,
+                               std::max<int64_t>(1,softCap));
+            sh.hardMs=std::min(base*timeUse*hardFactor/10000,
+                               std::max<int64_t>(1,hardCap));
+
+            // In +0 games, never spend our clock lead on a single move:
+            // if currently ahead on time, preserve at least the opponent's clock
+            // plus a reserve and move-overhead margin after this search.
+            if(inc==0 && opponentTime>0 && t>opponentTime) {
+                int64_t leadBudget=std::max<int64_t>(1,t-opponentTime-reserve-oh);
+                sh.hardMs=std::min(sh.hardMs,leadBudget);
+                sh.softMs=std::min(sh.softMs,sh.hardMs);
+            } else if(inc==0 && !clockEdge) {
+                // Conservative default for zero-increment games.
                 sh.softMs=sh.softMs*3/4;
                 sh.hardMs=sh.hardMs*3/4;
             }
