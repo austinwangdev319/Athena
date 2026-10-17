@@ -61,7 +61,11 @@ class MatchmakingTests(unittest.TestCase):
         text = config.read_text(encoding="utf-8")
         self.assertIn("  min_increment: 0", text)
         self.assertIn("  max_increment: 0", text)
-        self.assertIn("  challenge_increment:\\n    - 0", text)
+        import yaml
+        config_data = yaml.safe_load(text)
+        self.assertEqual(config_data["challenge"]["max_increment"], 0)
+        self.assertEqual(config_data["challenge"]["min_increment"], 0)
+        self.assertEqual(config_data["matchmaking"]["challenge_increment"], [0])
 
     def test_active_game_identifies_opponent_case_insensitively(self):
         games = [{"opponent": {"username": "BoTPlayer"}}]
