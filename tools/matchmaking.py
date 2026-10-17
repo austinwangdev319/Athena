@@ -29,8 +29,10 @@ CHALLENGE_COOLDOWN_SECONDS = 65
 RECENT_TARGET_SECONDS = 6 * 60 * 60
 # Zero increment only: thinking time must come entirely from the clock.
 CONTROL_CHOICES = {
+    "bullet": [(60, 0), (120, 0)],
     "blitz": [(180, 0), (300, 0)],
-    "rapid": [(600, 0)],
+    "rapid": [(600, 0), (900, 0), (1200, 0)],
+    "classical": [(1800, 0)],
 }
 
 
