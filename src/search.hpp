@@ -340,7 +340,8 @@ public:
                               || (rootBest&&rootBest.tactical()&&swing>=50);
                 // Incremented clocks may extend the target for unstable/tactical positions.
                 // With zero increment, longer thinking has no time reward and never gets an extension.
-                bool noIncrement = sh.limits.inc[rootSide==WHITE ? 0 : 1] == 0;
+                int clockSide = rootSide==WHITE ? 0 : 1;
+                bool noIncrement = sh.limits.time[clockSide] > 0 && sh.limits.inc[clockSide] == 0;
                 if(!noIncrement && critical && softLimit>0 && sh.hardMs>softLimit){
                     int64_t extension=std::max<int64_t>(softLimit/2,200);
                     softLimit=std::min(sh.hardMs,softLimit+extension);
