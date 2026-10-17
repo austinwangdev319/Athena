@@ -28,8 +28,8 @@ engine:
     Hash: 256
     OwnBook: true
     TimeUse: 100
-    GambitRisk: 100
-    Aggression: 110
+    GambitRisk: 30
+    Aggression: 80
     Contempt: 25
 
 abort_time: 30
@@ -52,20 +52,21 @@ challenge:
   preference: "bot"
   accept_bot: true
   only_bot: false
-  max_increment: 20
+  # Zero increment only; elapsed thinking time is never replenished.
+  max_increment: 0
   min_increment: 0
   max_base: 1800
   min_base: 15
   variants:
     - standard
   time_controls:
+    - bullet
     - blitz
     - rapid
-    - bullet
+    - classical
   modes:
     - rated
-  # Incoming challenges must be rated and within +/-150 rating points.
-  # Outgoing challenges are also rated-only and restricted by tools/matchmaking.py.
+  # Incoming and outgoing challenges are rated-only; the matcher filters outgoing opponents by rating.
   rating_difference: 150
   max_simultaneous_games_per_user: 2
 
@@ -90,7 +91,6 @@ matchmaking:
     - 300
   challenge_increment:
     - 0
-    - 2
   opponent_rating_difference: 150
   rating_preference: "high"
   challenge_mode: "rated"

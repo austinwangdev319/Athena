@@ -53,8 +53,9 @@ Move bookMove(const Position& cur,const std::vector<BookEntry>& book,int maxPly,
     const auto& hist=cur.history;
     if(hist.empty()||hist[0]!=start.hash) return Move();
     int played=int(hist.size())-1; if(played>=maxPly) return Move();
-    // Against 1.e4 c5, keep Athena's signature Wing Gambit to seize central tempo.
-    if(cur.side==WHITE && played==2 &&
+    // The Wing Gambit can buy central tempo, but is only forced while the
+    // learned opening-risk budget still permits a deliberate pawn investment.
+    if(maxDeficit>=30 && cur.side==WHITE && played==2 &&
        cur.b[parseSquare("e4")]==WHITE*PAWN &&
        cur.b[parseSquare("c5")]==BLACK*PAWN) {
         Position legalPosition=cur;

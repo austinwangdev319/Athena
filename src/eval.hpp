@@ -5,7 +5,7 @@
 
 namespace ag {
 struct EvalParams {
-    int aggression = 80;    // 100 = neutral
+    int aggression = 80;    // 100 = neutral; lower values discourage premature king attacks
     int contempt   = 25;    // centipawns; draws are scored slightly bad for the engine
 };
 inline EvalParams params;
@@ -44,13 +44,14 @@ inline int evaluate(const Position& pos) {
     int pawnCount[2]={0,0}, bishops[2]={0,0}, bishopSq[2]={-1,-1}, minors[2]={0,0};
     int knights[2]={0,0}, rooks[2]={0,0}, queens[2]={0,0};
     bool pawnAtt[2][128]={};
+    int attackCount[2][128]={};
     int centerControl[2]={0,0};
     auto centralSquare=[](int s){ int f=fileOf(s), r=rankOf(s); return f>=2&&f<=5&&r>=2&&r<=5; };
     // first pass: pawns
     for(int s=0;s<128;s++){ if(!valid(s)){s+=7;continue;} int p=pos.b[s]; if(std::abs(p)!=PAWN) continue;
         int c=idx(color(p)), f=fileOf(s)+1, r=c==0?rankOf(s):7-rankOf(s);
         pawnFile[c][f]++; pawnMin[c][f]=std::min(pawnMin[c][f],r); pawnMax[c][f]=std::max(pawnMax[c][f],r); pawnCount[c]++;
-        int d=color(p)*16; for(int df:{-1,1}){int t=s+d+df; if(valid(t))pawnAtt[c][t]=true;}
+        int d=color(p)*16; for(int df:{-1,1}){int t=s+d+df; if(valid(t)){pawnAtt[c][t]=true;attackCount[c][t]++;}}
     }
     // Pawn attacks help claim the central squares and their immediate approaches.
     for(int c=0;c<2;c++)
@@ -81,10 +82,40 @@ inline int evaluate(const Position& pos) {
                 // any enemy pawn ahead on this file (enemy rank measured from enemy side: ahead means enemy r_e > 7-r... use squares)
                 for(int t=s+fw+df; valid(t); t+=fw) if(pos.b[t]==-col*PAWN){passed=false;break;}
             }
-            if(passed){ static const int pm[8]={0,5,10,20,38,66,110,0}, pe[8]={0,8,16,34,64,110,180,0};
-                mgS[c]+=pm[r]; egS[c]+=pe[r];
-                int kd=std::max(std::abs(fileOf(kingSq[e])-fileOf(s)),std::abs(rankOf(kingSq[e])-rankOf(s+fw)));
-                egS[c]+=kd*r; }
+            if(passed){
+                static const int pm[8]={0,5,10,20,38,66,110,0};
+                static const int pe[8]={0,8,16,34,64,110,180,0};
+                mgS[c]+=pm[r];
+                egS[c]+=pe[r];
+
+                // A passed pawn becomes urgent when the promotion route is clear.
+                // Judge the race by the kings' distances to the promotion square and
+                // whether the opponent gets a move before the pawn advances again.
+                const int promotionRank = col==WHITE ? 7 : 0;
+                const int promotionSquare = promotionRank*16 + fileOf(s);
+                const int stepsToPromotion = 7-r;
+                bool clearPath=true;
+                for(int t=s+fw;valid(t);t+=fw) {
+                    if(pos.b[t]) { clearPath=false; break; }
+                    if(rankOf(t)==promotionRank) break;
+                }
+                auto kingDistance=[](int a,int b) {
+                    return std::max(std::abs(fileOf(a)-fileOf(b)),
+                                    std::abs(rankOf(a)-rankOf(b)));
+                };
+                const int friendlyKingDistance=kingDistance(kingSq[c],promotionSquare);
+                const int enemyKingDistance=kingDistance(kingSq[e],promotionSquare);
+                if(clearPath) {
+                    egS[c]+=std::clamp((enemyKingDistance-friendlyKingDistance)*8,-24,32);
+                    const int enemyTempo = pos.side==col ? 0 : 1;
+                    if(enemyKingDistance > stepsToPromotion + enemyTempo) {
+                        egS[c] += stepsToPromotion<=2 ? 150 : 75;
+                    } else if(stepsToPromotion<=2) {
+                        // Even a blockable pawn on the sixth/seventh rank demands attention.
+                        egS[c] += 35;
+                    }
+                }
+            }
             // Reward advanced central pawns that claim space without making material irrelevant.
             if(f==4||f==5){
                 if(r>=3&&r<=5) mgS[c]+=12;
@@ -95,10 +126,11 @@ inline int evaluate(const Position& pos) {
             if(pawnAtt[c][s]){mgS[c]+=5;egS[c]+=6;}
             continue;
         }
-        if(pt==KING) continue;
+        if(pt==KING){ for(int d0:kingSteps){int t=s+d0;if(valid(t))attackCount[c][t]++;} continue; }
         // piece activity
         int mob=0, ksAtt=0; bool attacksZone=false;
         auto touch=[&](int t){
+            attackCount[c][t]++;
             if(zone[e][t]){attacksZone=true;ksAtt++;}
             if(centralSquare(t)) centerControl[c]++;
         };
@@ -130,6 +162,22 @@ inline int evaluate(const Position& pos) {
         if(attacksZone){ attackers[c]++; static const int w[7]={0,0,2,2,3,5,0};
             attackUnits[c]+=w[pt]*ksAtt+w[pt]; }
     }
+    // Penalize loose material: attacks on an undefended piece create immediate tactical
+    // obligations. The penalty is deliberately smaller than the piece's material value
+    // because static attack maps do not account for pins or forcing continuations.
+    for(int s=0;s<128;s++) {
+        if(!valid(s)){s+=7;continue;}
+        int p=pos.b[s];
+        if(!p || std::abs(p)==KING) continue;
+        int c=idx(color(p)), e=1-c, pt=std::abs(p);
+        if(attackCount[e][s] > attackCount[c][s]) {
+            int relativeRank = c==0 ? rankOf(s) : 7-rankOf(s);
+            int risk = pt==PAWN ? (relativeRank>=4 ? 36 : 28)
+                                : std::min(90,value[pt]/5);
+            mgS[c]-=risk;
+            egS[c]-=risk/2;
+        }
+    }
     // Central control and space are useful strategic goals, capped to preserve tactical/material balance.
     for(int c=0;c<2;c++) mgS[c] += std::min(centerControl[c],16)*2;
     phase=std::min(phase,24);
@@ -137,14 +185,20 @@ inline int evaluate(const Position& pos) {
     int kingMg[2]={0,0};
     for(int c=0;c<2;c++){ int e=1-c, ks=kingSq[e]; // c attacks enemy king e
         int n=attackers[c];
-        // A king attack only counts when several pieces (incl. the queen) cooperate; a lone queen is not an attack.
-        if(n>=2 && queens[c]) {
-            int u=std::min(attackUnits[c],36);
-            int bonus=(u*u)/4 + 3*u; if(n==2) bonus=bonus*2/3;
-            kingMg[c]+=bonus*A/100;
-        } else if(n>=3) {
-            int u=std::min(attackUnits[c],30); kingMg[c]+=((u*u)/6)*A/100;
+        // King attacks should be earned through coordinated piece activity, not used as
+        // compensation for speculative pawn losses. Three attackers receive a modest
+        // bonus; two attackers with a queen receive only a small setup bonus.
+        int attackBonus=0;
+        if(n>=3) {
+            int u=std::min(attackUnits[c],30);
+            attackBonus=(u*u)/12 + 2*u;
+            if(queens[c] && n>=4) attackBonus+=10;
+        } else if(n>=2 && queens[c]) {
+            int u=std::min(attackUnits[c],20);
+            attackBonus=std::min(40,2*u);
         }
+        if(development[c]<3) attackBonus=attackBonus*2/3;
+        kingMg[c]+=attackBonus*A/100;
         // pawn shield for king e
         int sh=0, fw=e==0?16:-16; int kf=fileOf(ks);
         for(int df=-1;df<=1;df++){ int f=kf+df; if(f<0||f>7)continue;
@@ -153,7 +207,7 @@ inline int evaluate(const Position& pos) {
             if(p1)sh+=0; else if(p2)sh-=8; else sh-=18;
             if(!pawnFile[e][f+1]) sh-= pawnFile[c][f+1]? 12:22; }
         // credit (to attacker c) is the negative of shield
-        if(n>=2) kingMg[c]+= (-sh)*A/100 / (queens[c]?1:2);
+        if(n>=2) kingMg[c] += std::clamp(-sh,0,45)*A/100 / (queens[c]?1:2);
     }
     // development / initiative in the opening (gambit compensation)
     int devEdge=0;

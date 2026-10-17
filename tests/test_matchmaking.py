@@ -2,12 +2,14 @@ import ssl
 import unittest
 from unittest.mock import patch
 from urllib.error import URLError
+from pathlib import Path
 
 from tools.matchmaking import (
     LichessAPI,
     eligible_opponents,
     game_category,
     active_game_against,
+    CONTROL_CHOICES,
 )
 
 
@@ -48,6 +50,24 @@ class MatchmakingTests(unittest.TestCase):
         self.assertEqual(game_category(300, 2), "blitz")
         self.assertEqual(game_category(600, 0), "rapid")
         self.assertEqual(game_category(600, 2), "rapid")
+
+    def test_all_outgoing_time_controls_have_zero_increment(self):
+        controls = [clock for clocks in CONTROL_CHOICES.values() for clock in clocks]
+        self.assertTrue(controls)
+        self.assertTrue(all(increment == 0 for _, increment in controls))
+        for category, clocks in CONTROL_CHOICES.items():
+            self.assertTrue(all(game_category(base, inc) == category for base, inc in clocks))
+
+    def test_config_rejects_incremented_incoming_challenges(self):
+        config = Path(__file__).resolve().parents[1] / "lichess" / "config.yml"
+        text = config.read_text(encoding="utf-8")
+        self.assertIn("  min_increment: 0", text)
+        self.assertIn("  max_increment: 0", text)
+        import yaml
+        config_data = yaml.safe_load(text)
+        self.assertEqual(config_data["challenge"]["max_increment"], 0)
+        self.assertEqual(config_data["challenge"]["min_increment"], 0)
+        self.assertEqual(config_data["matchmaking"]["challenge_increment"], [0])
 
     def test_active_game_identifies_opponent_case_insensitively(self):
         games = [{"opponent": {"username": "BoTPlayer"}}]
