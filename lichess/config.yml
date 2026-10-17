@@ -60,9 +60,10 @@ challenge:
   variants:
     - standard
   time_controls:
+    - bullet
     - blitz
     - rapid
-    - bullet
+    - classical
   modes:
     - rated
   # Incoming and outgoing challenges are rated-only; the matcher filters outgoing opponents by rating.
