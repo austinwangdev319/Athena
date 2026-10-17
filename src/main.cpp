@@ -51,7 +51,7 @@ struct Engine {
         sh.limits=L; sh.stop=false; sh.pondering=L.ponder; sh.totalNodes=0; sh.threads=threadCount;
         sh.start=nowMs();
         int us=idx(pos.side); int64_t t=L.time[us], inc=L.inc[us]; int oh=sh.moveOverhead;
-        sh.softMs=0; sh.hardMs=0;
+        sh.softMs=0; sh.hardMs=0; sh.clockAdvantageDeepening=false;
         if(L.movetime>0) {
             sh.softMs=sh.hardMs=std::max<int64_t>(1,L.movetime-oh);
         } else if(t>0 || inc>0) {
@@ -78,9 +78,19 @@ struct Engine {
             int64_t hardCap=t<=15000 ? 400 : (t<=90000 ? 1800 : (t<=360000 ? 9000 : 18000));
             sh.softMs=std::min({base*timeUse/100,avail*14/100,softCap});
             sh.hardMs=std::min({base*250*timeUse/10000,avail*22/100,hardCap});
-            // No increment means thinking time cannot be replenished.
-            // Keep a 25% reserve by tightening both search budgets.
-            if(inc==0) {
+
+            // In a zero-increment game, spend more time only when:
+            // (1) the opponent has <=60s, (2) we have >=1.5x their time,
+            // and (3) our static evaluation is already favorable by >=1 pawn.
+            int64_t opponentTime=L.time[1-us];
+            bool clockEdge=opponentTime>0 && opponentTime<=60000
+                           && t>=opponentTime*3/2 && evaluate(pos)>=100;
+            if(clockEdge) {
+                sh.clockAdvantageDeepening=true;
+                sh.softMs=std::min({base*timeUse*135/10000,avail*20/100,softCap*2});
+                sh.hardMs=std::min({base*375*timeUse/10000,avail*30/100,hardCap*2});
+            } else if(inc==0) {
+                // Normally reserve time on +0 clocks; clock-edge mode is a bounded exception.
                 sh.softMs=sh.softMs*3/4;
                 sh.hardMs=sh.hardMs*3/4;
             }
